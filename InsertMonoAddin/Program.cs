@@ -6,44 +6,9 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Linq;
 using System.Text.Json;
-
-/* 
-[
-    {
-        "url": "https://xamjenkinsartifact.azureedge.net/build-package-osx-mono/2019-08/137/1b2e536b2238aa6bd86722996bcd1cf0f76cd6f3/MonoFramework-MDK-6.6.0.140.macos10.xamarin.universal.pkg",
-        "sha256": "26668943d1c32f09582a73ee8d5e4274dfa8d2aa936520e7f2c4cdaf76a963d6",
-        "md5": "bd8df61072a018dfd4d0c72ae5b62349",
-        "size": 357293878,
-        "productId": "964ebddd-1ffe-47e7-8128-5ce17ffffb05",
-        "releaseId": "606000140",
-        "version": "6.6.0.140"
-    }
-]
-*/
-
-/*
-{
-    "url": "https://xamjenkinsartifact.azureedge.net/build-package-osx-mono/2019-06/177/7da9a041b3b69d2f6ac04f8c2b2a1814d4d468f4/MonoFramework-MDK-6.4.0.194.macos10.xamarin.universal.pkg",
-    "version": "6.4.0.194",
-    "url": "https://xamjenkinsartifact.azureedge.net/build-package-osx-mono/2019-06/180/fe64a4765e6d1dbb41d5c86708fcb02aa519247a/MonoFramework-MDK-6.4.0.198.macos10.xamarin.universal.pkg",
-    "version": "6.4.0.198",
-    "uploaded": true,
-    "repo": "git@github.com:mono/mono",
-    "commit": "7da9a041b3b69d2f6ac04f8c2b2a1814d4d468f4",
-    "tag": "",
-    "productId": "964ebddd-1ffe-47e7-8128-5ce17ffffb05",
-    "releaseId": "604000194",
-    "sha256": "12834b45db0050b55556291f59f76bb1c0e2b37d336d57eb19c1cd0db147692a",
-    "md5": "6efd44319a4fc25dda16b9e6bdf07e8e",
-    "size": 353257385,
-    "releaseId": "604000198",
-    "sha256": "07f3622e5ec47ed000c9668702d45acf19f49602c10b0aaa055cc7e454cdc695",
-    "md5": "97c876c536dc5049265577cb4d0f902b",
-    "size": 352894286,
-}
- */
 
 namespace InsertMonoAddin
 {
@@ -52,7 +17,7 @@ namespace InsertMonoAddin
         static async Task Main(string[] args)
         {
             var artifactsUri = args [0];
-            string mdAddinsPath = null; //args [1];
+            string mdAddinsPath = args.Length > 1 ? args[1] : null; //args [1];
 
             await UpdateMdAddins (artifactsUri, mdAddinsPath);
         }
@@ -74,7 +39,23 @@ namespace InsertMonoAddin
                 size = artifact.size
             };
 
-            Console.WriteLine (JsonSerializer.Serialize(mono, new JsonSerializerOptions () { WriteIndented = true }));
+            if (mdAddinsPath != null) {
+                await UpdateDependencies (File.OpenRead (Path.Combine (mdAddinsPath, "bot-provisioning", "dependencies.csx")), null, artifact);
+            } else {
+                Console.WriteLine (JsonSerializer.Serialize(mono, new JsonSerializerOptions () { WriteIndented = true }));
+            }
+        }
+
+        public static async Task UpdateDependencies (Stream inputStream, Stream outputStream, Artifacts artifact) {
+            Regex regex = new Regex(@"[\W]?Item \(.(https.*MonoFramework-MDK.*).,");
+            using (var reader = new StreamReader (inputStream)) {
+                //using (var writer = new StreamWriter (outputStream)) {
+                    while (!reader.EndOfStream) {
+                        var line = await reader.ReadLineAsync ();
+                        Console.WriteLine (regex.Replace (line, $"Item (\"{artifact.url}\","));
+                    }
+                //}
+            }
         }
     }
 
