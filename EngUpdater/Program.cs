@@ -7,7 +7,7 @@ using System.Data;
 using System.IO;
 using System.Text;
 using System.Linq;
-using Newtonsoft.Json;
+using System.Text.Json;
 
 namespace EngUpdater
 {
@@ -321,13 +321,19 @@ namespace EngUpdater
             return client.GetStreamAsync(location);
         }
 
+        static ValueTask<T> DeserializeAsync<T> (Stream stream, T example)
+        {
+            return JsonSerializer.DeserializeAsync<T> (stream);
+        }
+
         public static async Task<(string sha, DateTimeOffset date) []> GetCommits(string path, string repo)
         {
             try {
                 client.DefaultRequestHeaders.Add("Accept", "*/*");
                 client.DefaultRequestHeaders.Add("User-Agent", "curl/7.54.0");
 
-                var data = await client.GetStringAsync ( new Uri ($"https://api.github.com/repos/{repo}/commits?path={path}"));
+                var stream = await client.GetStreamAsync ( new Uri ($"https://api.github.com/repos/{repo}/commits?path={path}"));
+
                 var obj = new [] {
                     new {
                         sha = "",
@@ -339,7 +345,7 @@ namespace EngUpdater
                     }
                 };
 
-                return JsonConvert.DeserializeAnonymousType (data, obj).Select (o => ValueTuple.Create (o.sha, o.commit.author.date)).ToArray();
+                return (await DeserializeAsync (stream, obj)).Select (o => ValueTuple.Create (o.sha, o.commit.author.date)).ToArray();
             } catch (Exception e) {
                 Console.WriteLine(e.ToString());
                 return Array.Empty<(string sha, DateTimeOffset date)>();
