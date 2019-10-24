@@ -33,6 +33,7 @@ namespace InsertMonoAddin
                 url = artifact.url,
                 version = artifact.version,
                 productId = artifact.productId,
+                commit = commit,
                 releaseId = artifact.releaseId,
                 sha256 = artifact.sha256,
                 md5 = artifact.md5,
@@ -41,6 +42,9 @@ namespace InsertMonoAddin
 
             if (mdAddinsPath != null) {
                 await UpdateDependencies (File.OpenRead (Path.Combine (mdAddinsPath, "bot-provisioning", "dependencies.csx")), null, artifact);
+                using (var external = File.Create (Path.Combine (mdAddinsPath, "external-components", "mono.json"))) {
+                    await JsonSerializer.SerializeAsync (external, mono, new JsonSerializerOptions () { WriteIndented = true });
+                }
             } else {
                 Console.WriteLine (JsonSerializer.Serialize(mono, new JsonSerializerOptions () { WriteIndented = true }));
             }
@@ -73,6 +77,7 @@ namespace InsertMonoAddin
         public string version { get; set; }
         public bool uploaded { get; set; } = true;
         public string repo { get; set; } = "git@github.com:mono/mono";
+        public string commit { get; set; }
         public string tag { get; set; } = "";
         public string productId { get; set; }
         public string releaseId { get; set; }
