@@ -20,6 +20,9 @@ namespace EngUpdater
     }
 
     class Program {
+        static string MSBuildBranch = "mono-2019-08";
+        static string ToolsetBranch = "release/3.1.1xx";
+
         static async Task Main(string[] args)
         {
             await UpdateXml (args.Length > 0 ? args[0] : null);
@@ -27,15 +30,17 @@ namespace EngUpdater
 
         public static async Task UpdateXml (string path)
         {
-            var versionsSourceStream = await GitHub.GetRaw ("dotnet/toolset", "release/3.1.1xx", "eng/Versions.props");
-            var versionsTargetStream = await GitHub.GetRaw ("mono/msbuild", "mono-2019-08", "eng/Versions.props");
-            var detailsSourceStream = await GitHub.GetRaw ("dotnet/toolset", "release/3.1.1xx", "eng/Version.Details.xml");
-            var packagesTargetStream = await GitHub.GetRaw ("mono/msbuild", "mono-2019-08", "eng/Packages.props");
+            var versionsSourceStream = await GitHub.GetRaw ("dotnet/toolset", ToolsetBranch, "eng/Versions.props");
+            var versionsTargetStream = await GitHub.GetRaw ("mono/msbuild", MSBuildBranch, "eng/Versions.props");
+            var detailsSourceStream = await GitHub.GetRaw ("dotnet/toolset", ToolsetBranch, "eng/Version.Details.xml");
+            var packagesTargetStream = await GitHub.GetRaw ("mono/msbuild", MSBuildBranch, "eng/Packages.props");
             var details = await ReadVersionDetails (detailsSourceStream);
-            var detailsTargetStream = await GitHub.GetRaw ("mono/msbuild", "mono-2019-08", "eng/Version.Details.xml");
-            var versions = await ReadCurrent (versionsSourceStream);
+            var detailsTargetStream = await GitHub.GetRaw ("mono/msbuild", MSBuildBranch, "eng/Version.Details.xml");
+            var versions = await ReadProps (versionsSourceStream);
             versions.Remove ("PackageVersionPrefix");
             versions.Remove ("VersionPrefix");
+
+
 
             foreach (var detail in details.Values) {
                 var vkey = $"{detail.Name.Replace (".", "")}PackageVersion";
@@ -46,7 +51,11 @@ namespace EngUpdater
                     Console.WriteLine ($"No match for {vkey}");
                 }
             }
-            
+
+            /* Alias nuget here?? */
+            if (versions.TryGetValue ("NuGetBuildTasksPackageVersion", out var ver))
+                versions ["NuGetPackagePackageVersion"] = ver;
+
             Stream detailsOutputStream = null;
             Stream versionsOutputStream = null;
             Stream packagesOutputStream = null;
@@ -57,9 +66,9 @@ namespace EngUpdater
             }
 
 
-            await UpdateProps (versionsTargetStream, versionsOutputStream, versions);
+            await UpdateProps (versionsTargetStream, versionsOutputStream, versions, true);
             await UpdateDetails (detailsTargetStream, detailsOutputStream, details);
-            await UpdateProps (packagesTargetStream, packagesOutputStream, versions);
+            await UpdateProps (packagesTargetStream, packagesOutputStream, versions, true);
         }
 
         public static async Task<Dictionary<string,VersionDetails>> ReadVersionDetails (Stream stream)
@@ -135,7 +144,7 @@ namespace EngUpdater
             }
         }
 
-        static async Task<Dictionary<string,string>> ReadCurrent (Stream stream)
+        static async Task<Dictionary<string,string>> ReadProps (Stream stream)
         {
             using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings () { Async = true }))
             {
@@ -181,7 +190,7 @@ namespace EngUpdater
             }
         }
 
-        public static async Task UpdateProps (Stream inputStream, Stream outputStream, Dictionary<string,string> versions)
+        public static async Task UpdateProps (Stream inputStream, Stream outputStream, Dictionary<string,string> versions, bool stripPackage = false)
         {
             XmlWriterSettings settings = new XmlWriterSettings();
             //settings.Indent = true;
@@ -191,10 +200,9 @@ namespace EngUpdater
             using (var reader = XmlReader.Create (inputStream, new XmlReaderSettings { Async = true })) {
                 using (var writer = outputStream != null ? XmlWriter.Create (outputStream, settings) : XmlWriter.Create (Console.Out)) {
                     while (await reader.ReadAsync()) {
-                        var name = reader.Name;//reader.Name.Replace ("PackageVersion", "Version");
+                        var name = stripPackage ? reader.Name.Replace ("Version", "PackageVersion") : reader.Name;
                         if (reader.NodeType == XmlNodeType.Element && versions.TryGetValue (name, out var value)) {
-                            writer.WriteElementString(reader.Name, value);
-                            reader.Skip ();
+                            writer.WriteUpdatedElementString(reader, value);
                         } else {
                             writer.WriteNode (reader);
                         }
@@ -230,6 +238,22 @@ namespace EngUpdater
     }
 
     public static class XmlIOExtensions {
+        public static void WriteUpdatedElementString (this XmlWriter writer, XmlReader reader, string value)
+        {
+            writer.WriteNode (reader);
+            reader.Read ();
+            var oldValue = reader.Value;
+
+            if (Char.IsDigit (oldValue[0])) {
+                writer.WriteString (value);
+            } else {
+
+                writer.WriteNode (reader);
+            }
+            reader.Read ();
+            writer.WriteNode (reader);
+        }
+
         public static void WriteDependency (this XmlWriter writer, XmlReader reader, VersionDetails details)
         {
                 writer.WriteStartElement (reader.Prefix, reader.LocalName, reader.NamespaceURI);
@@ -242,17 +266,9 @@ namespace EngUpdater
                     switch (reader.NodeType) {
                     case XmlNodeType.Element:
                         if (reader.Name == "Uri") {
-                            writer.WriteNode (reader);
-                            writer.WriteString(details.Uri);
-                            reader.Read();
-                            reader.Read();
-                            writer.WriteNode (reader);
+                            writer.WriteUpdatedElementString (reader, details.Uri);
                         } else if (reader.Name == "Sha") {
-                            writer.WriteNode (reader);
-                            writer.WriteString(details.Sha);
-                            reader.Read();
-                            reader.Read();
-                            writer.WriteNode (reader);
+                            writer.WriteUpdatedElementString(reader, details.Sha);
                         } else {
                             writer.WriteNode (reader);
                         }
