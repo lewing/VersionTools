@@ -32,7 +32,21 @@ namespace EngUpdater
 
         static async Task Main(string[] args)
         {
-            await UpdateXml (args.Length > 0 ? args[0] : null);
+            string msbuildPath = null;
+
+            switch (args.Length) {
+                case 1:
+                msbuildPath = args[0];
+                break;
+                case 2:
+                ToolsetBranch = args[0];
+                msbuildPath = args[1];
+                break;
+                default:
+                break;
+            }
+
+            await UpdateXml (msbuildPath);
         }
 
         public static async Task UpdateXml (string path)
@@ -90,7 +104,7 @@ namespace EngUpdater
                     case XmlNodeType.Element when reader.Name == "Dependency":
                         var details = reader.ReadDependency ();
                         versions [details.Name] = details;
-                        Console.WriteLine ($"{details.Name} = {details.Version}");
+                        //Console.WriteLine ($"{details.Name} ==> {details.Version}");
                         break;
                     case XmlNodeType.Element when reader.Name == "ProductDependencies":
                     case XmlNodeType.Element when reader.Name == "Dependencies":
@@ -126,7 +140,7 @@ namespace EngUpdater
                         if (key.Contains ("Version") && Char.IsDigit (value[0])) {
                             var packageKey = !key.EndsWith ("PackageVersion") ? key.Replace ("Version", "PackageVersion") : key;
                             settings[packageKey] = value;
-                            Console.WriteLine ($"Stored {packageKey} = {value}");
+                            Console.WriteLine ($"{packageKey} => {value}");
                         }
                         break;
                     case XmlNodeType.Element:
@@ -175,7 +189,7 @@ namespace EngUpdater
                         if (reader.NodeType == XmlNodeType.Element && reader.Name == "Dependency") {
                             var name = reader.GetAttribute ("Name");
                             if (versions.TryGetValue (name, out var details)) {
-                                writer.WriteDependency (reader, details);
+                                var oldDetails = writer.WriteDependency (reader, details);
                             } else {
                                 writer.WriteNode (reader);
                             }
@@ -256,11 +270,15 @@ namespace EngUpdater
             return details;
         }
 
-        public static void WriteDependency (this XmlWriter writer, XmlReader reader, VersionDetails details)
+        public static VersionDetails WriteDependency (this XmlWriter writer, XmlReader reader, VersionDetails details)
         {
+            var oldDetails = new VersionDetails ();
             writer.WriteStartElement (reader.Prefix, reader.LocalName, reader.NamespaceURI);
             writer.WriteAttributeString ("Name", reader.NamespaceURI, details.Name);
             writer.WriteAttributeString ("Version", reader.NamespaceURI, details.Version);
+
+            oldDetails.Name = reader.GetAttribute ("Name");
+            oldDetails.Version = reader.GetAttribute ("Version");
             if (details.CoherentParentDependency != null)
                 writer.WriteAttributeString ("CoherentParentDependency", reader.NamespaceURI, details.CoherentParentDependency);
 
@@ -268,24 +286,25 @@ namespace EngUpdater
                 switch (reader.NodeType) {
                 case XmlNodeType.Element:
                     if (reader.Name == "Uri") {
-                        writer.WriteUpdatedElementString (reader, details.Uri);
+                        oldDetails.Uri = writer.WriteUpdatedElementString (reader, details.Uri);
                     } else if (reader.Name == "Sha") {
-                        writer.WriteUpdatedElementString (reader, details.Sha);
+                        oldDetails.Sha = writer.WriteUpdatedElementString (reader, details.Sha);
                     } else {
                         writer.WriteNode (reader);
                     }
-                break;
+                    break;
                 case XmlNodeType.EndElement:
                     writer.WriteNode (reader);
                     if (reader.Name == "Dependency")
-                        return;
+                        return oldDetails;
 
-                        break;
-                    default:
-                        writer.WriteNode (reader);
-                        break;
-                    }
+                    break;
+                default:
+                    writer.WriteNode (reader);
+                    break;
+                }
             }
+            return oldDetails;
         }
 
         public static void WriteNode (this XmlWriter writer, XmlReader reader)
@@ -343,7 +362,7 @@ namespace EngUpdater
             return JsonSerializer.DeserializeAsync<T> (stream);
         }
 
-        public static async Task<(string sha, DateTimeOffset date) []> GetCommits(string path, string repo)
+        public static async Task<(string sha, DateTimeOffset date) []> GetCommits(string repo, string path)
         {
             try {
                 client.DefaultRequestHeaders.Add ("Accept", "*/*");
