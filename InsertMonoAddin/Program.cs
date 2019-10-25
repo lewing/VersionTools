@@ -25,8 +25,9 @@ namespace InsertMonoAddin
         public static async Task UpdateMdAddins (string artifactsUri, string mdAddinsPath) {
             var artifactsStream = File.OpenRead (artifactsUri);
             var artifact = (await JsonSerializer.DeserializeAsync<Artifacts[]>(artifactsStream))[0];
-            
+
             var parts = artifact.url.Split (new [] {'/'});
+
             var commit = parts[parts.Length - 2];
             Console.WriteLine ($"commit = {commit}");
             var mono = new MonoExternal (){
@@ -40,25 +41,35 @@ namespace InsertMonoAddin
                 size = artifact.size
             };
 
+            var outputStream = new MemoryStream ();
             if (mdAddinsPath != null) {
-                await UpdateDependencies (File.OpenRead (Path.Combine (mdAddinsPath, "bot-provisioning", "dependencies.csx")), null, artifact);
+                await UpdateDependencies (File.OpenRead (Path.Combine (mdAddinsPath, "bot-provisioning", "dependencies.csx")), outputStream, artifact);
+                outputStream.Seek (0, SeekOrigin.Begin);
+                //Console.Write (reader.ReadToEnd());
+                using (var deps = File.Create (Path.Combine (mdAddinsPath, "bot-provisioning", "dependencies.csx"))) {
+                    await outputStream.CopyToAsync (deps);
+                }
                 using (var external = File.Create (Path.Combine (mdAddinsPath, "external-components", "mono.json"))) {
                     await JsonSerializer.SerializeAsync (external, mono, new JsonSerializerOptions () { WriteIndented = true });
                 }
             } else {
                 Console.WriteLine (JsonSerializer.Serialize(mono, new JsonSerializerOptions () { WriteIndented = true }));
+                outputStream.Seek (0, SeekOrigin.Begin);
+                var reader = new StreamReader (outputStream);
+                Console.Write (reader.ReadToEnd());
             }
         }
 
         public static async Task UpdateDependencies (Stream inputStream, Stream outputStream, Artifacts artifact) {
             Regex regex = new Regex(@"[\W]?Item \(.(https.*MonoFramework-MDK.*).,");
             using (var reader = new StreamReader (inputStream)) {
-                //using (var writer = new StreamWriter (outputStream)) {
-                    while (!reader.EndOfStream) {
-                        var line = await reader.ReadLineAsync ();
-                        Console.WriteLine (regex.Replace (line, $"Item (\"{artifact.url}\","));
-                    }
-                //}
+                var writer = new StreamWriter (outputStream);
+                string line;
+                while ((line = await reader.ReadLineAsync ()) != null) {
+                    //var line = await reader.ReadLineAsync ();
+                    writer.WriteLine (regex.Replace (line, $"Item (\"{artifact.url}\","));
+                }
+                writer.Flush();
             }
         }
     }
