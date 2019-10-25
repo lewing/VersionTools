@@ -85,65 +85,18 @@ namespace EngUpdater
             var versions = new Dictionary<string,VersionDetails> ();
             using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings () { Async = true }))
             {
-                void ReadDetails (XmlReader read, VersionDetails detail) 
-                {
-                        var name = read.Name;
-                        if (read.NodeType == XmlNodeType.Element)
-                            read.Read ();
-
-                        switch (name) {
-                            case "Name":
-                                detail.Name = read.Value;
-                                break;
-                            case nameof (VersionDetails.Version):
-                                detail.Version = read.Value;
-                                break;
-                            case nameof (VersionDetails.Uri):
-                                detail.Uri = read.Value;
-                                break;
-                            case nameof (VersionDetails.Sha):
-                                detail.Sha = read.Value;
-                                break;
-                            case nameof (VersionDetails.CoherentParentDependency):
-                                detail.CoherentParentDependency = read.Value;
-                                break;
-                            default:
-                                read.Skip ();
-                                break;
-                        }
-                }
-
-                VersionDetails details = null;
                 while (await reader.ReadAsync()) {
                     switch (reader.NodeType) {
-                    case XmlNodeType.Element:
-                        switch (reader.Name) {
-                            case "Dependency":
-                                details = new VersionDetails ();
-                                while (reader.MoveToNextAttribute ()) {
-                                    ReadDetails (reader, details);
-                                }
-                                break;
-                            case "ProductDependencies":
-                            case "Dependencies":
-                                //Console.WriteLine("Start Element {0}", reader.Name);
-                                break;
-                            default:
-                                if (details != null) {
-                                    ReadDetails (reader, details);
-                                }
-                                break;
-                        }
+                    case XmlNodeType.Element when reader.Name == "Dependency":
+                        var details = reader.ReadDependency ();
+                        versions [details.Name] = details;
+                        Console.WriteLine ($"{details.Name} = {details.Version}");
                         break;
-                    case XmlNodeType.EndElement:
-                        //Console.WriteLine("End Element {0}", reader.Name);
-                        if (reader.Name == "Dependency") {
-                            if (details != null) {
-                                versions [details.Name] = details;
-                                Console.WriteLine ($"{details.Name} = {details.Version}");
-                            }
-                            details = null;
-                        }
+                    case XmlNodeType.Element when reader.Name == "ProductDependencies":
+                    case XmlNodeType.Element when reader.Name == "Dependencies":
+                        break;
+                    case XmlNodeType.Element:
+                        await reader.SkipAsync ();
                         break;
                     default:
                         break;
@@ -161,35 +114,26 @@ namespace EngUpdater
                 bool inGroup = false;
                 while (await reader.ReadAsync ()) {
                     switch (reader.NodeType) {
-                    case XmlNodeType.Element:
-                        switch (reader.Name) {
-                            case string key when inGroup:
-                                if (await reader.ReadAsync ()) {
-                                    var value = await reader.GetValueAsync ();
-                                    //Console.WriteLine($"{key} = {value}");
-                                    if (key.Contains ("Version") && Char.IsDigit (value[0])) {
-                                        var packageKey = !key.EndsWith ("PackageVersion") ? key.Replace ("Version", "PackageVersion") : key;
-                                        settings[packageKey] = value;
-                                        Console.WriteLine ($"Stored {packageKey} = {value}");
-                                    }
-                                } else {
-                                    Console.WriteLine ("odd");
-                                }
-                                break;
-                            case "PropertyGroup":
-                                inGroup = true;
-                                break;
-                            case "Project":
-                                //Console.WriteLine("Start Element {0}", reader.Name);
-                                break;
-                            default:
-                                reader.Skip();
-                                break;
+                    case XmlNodeType.Element when reader.Name == "PropertyGroup":
+                        inGroup = true;
+                        break;
+                    case XmlNodeType.Element when reader.Name == "Project":
+                        break;
+                    case XmlNodeType.Element when inGroup:
+                        var key = reader.Name;
+                        await reader.ReadAsync ();
+                        var value = await reader.GetValueAsync ();
+                        if (key.Contains ("Version") && Char.IsDigit (value[0])) {
+                            var packageKey = !key.EndsWith ("PackageVersion") ? key.Replace ("Version", "PackageVersion") : key;
+                            settings[packageKey] = value;
+                            Console.WriteLine ($"Stored {packageKey} = {value}");
                         }
                         break;
-                    case XmlNodeType.EndElement:
-                        if (reader.Name == "PropertyGroup")
-                            inGroup = false;
+                    case XmlNodeType.Element:
+                        await reader.SkipAsync ();
+                        break;
+                    case XmlNodeType.EndElement when reader.Name == "PropertyGroup":
+                        inGroup = false;
                         break;
                     default:
                         break;
@@ -261,6 +205,55 @@ namespace EngUpdater
             writer.WriteNode (reader);
 
             return oldValue;
+        }
+
+        public static VersionDetails ReadDependency (this XmlReader reader)
+        {
+            var details = new VersionDetails ();
+            
+            while (reader.MoveToNextAttribute ()) {
+                ReadDetails (reader, details);
+            }
+
+            while (reader.Read ()) {
+                switch (reader.NodeType) {
+                case XmlNodeType.Element:
+                    ReadDetails (reader, details);
+                    break;
+                case XmlNodeType.EndElement when reader.Name == "Dependency":
+                    return details;
+                }
+            }
+
+            void ReadDetails (XmlReader read, VersionDetails detail) 
+            {
+                var name = read.Name;
+                if (read.NodeType == XmlNodeType.Element)
+                    read.Read ();
+
+                switch (name) {
+                case "Name":
+                    detail.Name = read.Value;
+                    break;
+                case nameof (VersionDetails.Version):
+                    detail.Version = read.Value;
+                    break;
+                case nameof (VersionDetails.Uri):
+                    detail.Uri = read.Value;
+                    break;
+                case nameof (VersionDetails.Sha):
+                    detail.Sha = read.Value;
+                    break;
+                case nameof (VersionDetails.CoherentParentDependency):
+                    detail.CoherentParentDependency = read.Value;
+                    break;
+                default:
+                    read.Skip ();
+                    break;
+                }
+            }
+
+            return details;
         }
 
         public static void WriteDependency (this XmlWriter writer, XmlReader reader, VersionDetails details)
