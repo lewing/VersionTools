@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Linq;
 using System.Text.Json;
+using Whomp = Newtonsoft.Json;
 
 namespace InsertMonoAddin
 {
@@ -52,7 +53,13 @@ namespace InsertMonoAddin
                     await outputStream.CopyToAsync (deps);
                 }
                 using (var external = File.Create (Path.Combine (mdAddinsPath, "external-components", "mono.json"))) {
-                    await JsonSerializer.SerializeAsync (external, mono, new JsonSerializerOptions () { WriteIndented = true });
+                    //await JsonSerializer.SerializeAsync (external, mono, new JsonSerializerOptions () { WriteIndented = true });
+                    using (var sw = new StreamWriter(external))
+                    using (var jtw = new Whomp.JsonTextWriter(sw) {
+                        Formatting = Whomp.Formatting.Indented,
+                        Indentation=4, 
+                        IndentChar = ' '})
+                            (new Whomp.JsonSerializer()).Serialize(jtw, mono);
                 }
             } else {
                 Console.WriteLine (JsonSerializer.Serialize(mono, new JsonSerializerOptions () { WriteIndented = true }));
