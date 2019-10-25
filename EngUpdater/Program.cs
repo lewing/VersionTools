@@ -20,8 +20,15 @@ namespace EngUpdater
     }
 
     class Program {
-        static string MSBuildBranch = "mono-2019-08";
+        static string ToolsetRepo = "dotnet/toolset";
         static string ToolsetBranch = "release/3.1.1xx";
+
+        static string MSBuildRepo = "mono/msbuild";
+        static string MSBuildBranch = "mono-2019-08";
+
+        static string VersionsPath = "eng/Versions.props";
+        static string PackagesPath = "eng/Packages.props";
+        static string VersionDetailsPath = "eng/Version.Details.xml";
 
         static async Task Main(string[] args)
         {
@@ -30,19 +37,21 @@ namespace EngUpdater
 
         public static async Task UpdateXml (string path)
         {
-            var versionsSourceStream = await GitHub.GetRaw ("dotnet/toolset", ToolsetBranch, "eng/Versions.props");
-            var versionsTargetStream = await GitHub.GetRaw ("mono/msbuild", MSBuildBranch, "eng/Versions.props");
-            var detailsSourceStream = await GitHub.GetRaw ("dotnet/toolset", ToolsetBranch, "eng/Version.Details.xml");
-            var packagesTargetStream = await GitHub.GetRaw ("mono/msbuild", MSBuildBranch, "eng/Packages.props");
+            var versionsSourceStream = await GitHub.GetRaw (ToolsetRepo, ToolsetBranch, VersionsPath);
+            var detailsSourceStream = await GitHub.GetRaw (ToolsetRepo, ToolsetBranch, VersionDetailsPath);
+
+            var versionsTargetStream = await GitHub.GetRaw (MSBuildRepo, MSBuildBranch, VersionsPath);
+            var packagesTargetStream = await GitHub.GetRaw (MSBuildRepo, MSBuildBranch, PackagesPath);
+            var detailsTargetStream = await GitHub.GetRaw (MSBuildRepo, MSBuildBranch, VersionDetailsPath);
+            
             var details = await ReadVersionDetails (detailsSourceStream);
-            var detailsTargetStream = await GitHub.GetRaw ("mono/msbuild", MSBuildBranch, "eng/Version.Details.xml");
             var versions = await ReadProps (versionsSourceStream);
+
             versions.Remove ("PackageVersionPrefix");
             versions.Remove ("VersionPrefix");
 
-
-
             foreach (var detail in details.Values) {
+                // translate Versions.Details name into props name
                 var vkey = $"{detail.Name.Replace (".", "")}PackageVersion";
 
                 if (versions.TryGetValue (vkey, out var version)) {
@@ -59,12 +68,12 @@ namespace EngUpdater
             Stream detailsOutputStream = null;
             Stream versionsOutputStream = null;
             Stream packagesOutputStream = null;
+
             if (path != null) {
                 detailsOutputStream = File.Create (Path.Combine (path, "eng/Version.Details.xml"));
                 versionsOutputStream = File.Create (Path.Combine (path, "eng/Versions.props"));
                 packagesOutputStream = File.Create (Path.Combine (path, "eng/Packages.props"));
             }
-
 
             await UpdateProps (versionsTargetStream, versionsOutputStream, versions, true);
             await UpdateDetails (detailsTargetStream, detailsOutputStream, details);
@@ -111,7 +120,7 @@ namespace EngUpdater
                         switch (reader.Name) {
                             case "Dependency":
                                 details = new VersionDetails ();
-                                while (reader.MoveToNextAttribute()) {
+                                while (reader.MoveToNextAttribute ()) {
                                     ReadDetails (reader, details);
                                 }
                                 break;
@@ -146,11 +155,11 @@ namespace EngUpdater
 
         static async Task<Dictionary<string,string>> ReadProps (Stream stream)
         {
-            using (XmlReader reader = XmlReader.Create(stream, new XmlReaderSettings () { Async = true }))
+            using (XmlReader reader = XmlReader.Create (stream, new XmlReaderSettings () { Async = true }))
             {
                 var settings = new Dictionary<string,string>();
                 bool inGroup = false;
-                while (await reader.ReadAsync()) {
+                while (await reader.ReadAsync ()) {
                     switch (reader.NodeType) {
                     case XmlNodeType.Element:
                         switch (reader.Name) {
@@ -161,7 +170,7 @@ namespace EngUpdater
                                     if (key.Contains ("Version") && Char.IsDigit (value[0])) {
                                         var packageKey = !key.EndsWith ("PackageVersion") ? key.Replace ("Version", "PackageVersion") : key;
                                         settings[packageKey] = value;
-                                        Console.WriteLine($"Stored {packageKey} = {value}");
+                                        Console.WriteLine ($"Stored {packageKey} = {value}");
                                     }
                                 } else {
                                     Console.WriteLine ("odd");
@@ -192,17 +201,16 @@ namespace EngUpdater
 
         public static async Task UpdateProps (Stream inputStream, Stream outputStream, Dictionary<string,string> versions, bool stripPackage = false)
         {
-            XmlWriterSettings settings = new XmlWriterSettings();
-            //settings.Indent = true;
-            //settings.OmitXmlDeclaration = true;
-            settings.Encoding = new UTF8Encoding(false);
+            XmlWriterSettings settings = new XmlWriterSettings ();
+            settings.Encoding = new UTF8Encoding (false);
             settings.Indent = true;
+
             using (var reader = XmlReader.Create (inputStream, new XmlReaderSettings { Async = true })) {
                 using (var writer = outputStream != null ? XmlWriter.Create (outputStream, settings) : XmlWriter.Create (Console.Out)) {
-                    while (await reader.ReadAsync()) {
+                    while (await reader.ReadAsync ()) {
                         var name = stripPackage ? reader.Name.Replace ("Version", "PackageVersion") : reader.Name;
                         if (reader.NodeType == XmlNodeType.Element && versions.TryGetValue (name, out var value)) {
-                            writer.WriteUpdatedElementString(reader, value);
+                            writer.WriteUpdatedElementString (reader, value);
                         } else {
                             writer.WriteNode (reader);
                         }
@@ -213,11 +221,10 @@ namespace EngUpdater
 
         public static async Task UpdateDetails (Stream inputStream, Stream outputStream, Dictionary<string,VersionDetails> versions)
         {
-            XmlWriterSettings settings = new XmlWriterSettings();
+            XmlWriterSettings settings = new XmlWriterSettings ();
             settings.Indent = true;
-            settings.IndentChars = "  ";
-            //settings.OmitXmlDeclaration = true;
-            settings.Encoding = new UTF8Encoding(false);
+            settings.Encoding = new UTF8Encoding (false);
+
             using (var reader = XmlReader.Create (inputStream, new XmlReaderSettings { Async = true })) {
                 using (var writer = outputStream != null ? XmlWriter.Create (outputStream, settings) : XmlWriter.Create (Console.Out)) {
                     while (await reader.ReadAsync ()) {
@@ -238,7 +245,7 @@ namespace EngUpdater
     }
 
     public static class XmlIOExtensions {
-        public static void WriteUpdatedElementString (this XmlWriter writer, XmlReader reader, string value)
+        public static string WriteUpdatedElementString (this XmlWriter writer, XmlReader reader, string value)
         {
             writer.WriteNode (reader);
             reader.Read ();
@@ -247,43 +254,44 @@ namespace EngUpdater
             if (Char.IsDigit (oldValue[0])) {
                 writer.WriteString (value);
             } else {
-
                 writer.WriteNode (reader);
             }
+
             reader.Read ();
             writer.WriteNode (reader);
+
+            return oldValue;
         }
 
         public static void WriteDependency (this XmlWriter writer, XmlReader reader, VersionDetails details)
         {
-                writer.WriteStartElement (reader.Prefix, reader.LocalName, reader.NamespaceURI);
-                writer.WriteAttributeString ("Name", reader.NamespaceURI, details.Name);
-                writer.WriteAttributeString ("Version", reader.NamespaceURI, details.Version);
-                if (details.CoherentParentDependency != null)
-                    writer.WriteAttributeString ("CoherentParentDependency", reader.NamespaceURI, details.CoherentParentDependency);
-                
-                while (reader.Read()) {
-                    switch (reader.NodeType) {
-                    case XmlNodeType.Element:
-                        if (reader.Name == "Uri") {
-                            writer.WriteUpdatedElementString (reader, details.Uri);
-                        } else if (reader.Name == "Sha") {
-                            writer.WriteUpdatedElementString(reader, details.Sha);
-                        } else {
-                            writer.WriteNode (reader);
-                        }
-                        break;
-                    case XmlNodeType.EndElement:
+            writer.WriteStartElement (reader.Prefix, reader.LocalName, reader.NamespaceURI);
+            writer.WriteAttributeString ("Name", reader.NamespaceURI, details.Name);
+            writer.WriteAttributeString ("Version", reader.NamespaceURI, details.Version);
+            if (details.CoherentParentDependency != null)
+                writer.WriteAttributeString ("CoherentParentDependency", reader.NamespaceURI, details.CoherentParentDependency);
+
+            while (reader.Read()) {
+                switch (reader.NodeType) {
+                case XmlNodeType.Element:
+                    if (reader.Name == "Uri") {
+                        writer.WriteUpdatedElementString (reader, details.Uri);
+                    } else if (reader.Name == "Sha") {
+                        writer.WriteUpdatedElementString (reader, details.Sha);
+                    } else {
                         writer.WriteNode (reader);
-                        if (reader.Name == "Dependency")
-                            return;
-                        
+                    }
+                break;
+                case XmlNodeType.EndElement:
+                    writer.WriteNode (reader);
+                    if (reader.Name == "Dependency")
+                        return;
+
                         break;
                     default:
                         writer.WriteNode (reader);
                         break;
                     }
-                
             }
         }
 
@@ -295,7 +303,7 @@ namespace EngUpdater
                 writer.WriteAttributes (reader, true );
 
                 if (reader.IsEmptyElement)
-                    writer.WriteEndElement();
+                    writer.WriteEndElement ();
 
                 break;
             case XmlNodeType.EndElement:
@@ -319,7 +327,7 @@ namespace EngUpdater
                 writer.WriteProcessingInstruction (reader.Name, reader.Value);
                 break;
             case XmlNodeType.DocumentType:
-                writer.WriteDocType (reader.Name, reader.GetAttribute("PUBLIC"), reader.GetAttribute("SYSTEM"), reader.Value);
+                writer.WriteDocType (reader.Name, reader.GetAttribute ("PUBLIC"), reader.GetAttribute ("SYSTEM"), reader.Value);
                 break;
             case XmlNodeType.Comment:
                 writer.WriteComment (reader.Value);
@@ -334,7 +342,7 @@ namespace EngUpdater
         public static Task<Stream> GetRaw (string repo, string version, string path)
         {
             var location = new Uri($"https://raw.githubusercontent.com/{repo}/{version}/{path}");
-            return client.GetStreamAsync(location);
+            return client.GetStreamAsync (location);
         }
 
         static ValueTask<T> DeserializeAsync<T> (Stream stream, T example)
@@ -345,10 +353,10 @@ namespace EngUpdater
         public static async Task<(string sha, DateTimeOffset date) []> GetCommits(string path, string repo)
         {
             try {
-                client.DefaultRequestHeaders.Add("Accept", "*/*");
-                client.DefaultRequestHeaders.Add("User-Agent", "curl/7.54.0");
+                client.DefaultRequestHeaders.Add ("Accept", "*/*");
+                client.DefaultRequestHeaders.Add ("User-Agent", "curl/7.54.0");
 
-                var stream = await client.GetStreamAsync ( new Uri ($"https://api.github.com/repos/{repo}/commits?path={path}"));
+                var stream = await client.GetStreamAsync (new Uri ($"https://api.github.com/repos/{repo}/commits?path={path}"));
 
                 var obj = new [] {
                     new {
@@ -361,10 +369,10 @@ namespace EngUpdater
                     }
                 };
 
-                return (await DeserializeAsync (stream, obj)).Select (o => ValueTuple.Create (o.sha, o.commit.author.date)).ToArray();
+                return (await DeserializeAsync (stream, obj)).Select (o => ValueTuple.Create (o.sha, o.commit.author.date)).ToArray ();
             } catch (Exception e) {
-                Console.WriteLine(e.ToString());
-                return Array.Empty<(string sha, DateTimeOffset date)>();
+                Console.WriteLine (e.ToString ());
+                return Array.Empty<(string sha, DateTimeOffset date)> ();
             }
         }
     }
