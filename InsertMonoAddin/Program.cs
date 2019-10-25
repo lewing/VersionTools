@@ -14,23 +14,25 @@ namespace InsertMonoAddin
 {
     class Program
     {
+        static HttpClient client = new HttpClient ();
+
         static async Task Main(string[] args)
         {
-            var artifactsUri = args [0];
+            var commit = args [0];
             string mdAddinsPath = args.Length > 1 ? args[1] : null; //args [1];
 
-            await UpdateMdAddins (artifactsUri, mdAddinsPath);
+            await UpdateMdAddins (commit, mdAddinsPath);
         }
 
-        public static async Task UpdateMdAddins (string artifactsUri, string mdAddinsPath) {
-            var artifactsStream = File.OpenRead (artifactsUri);
+        public static async Task UpdateMdAddins (string commit, string mdAddinsPath) {
+            var commitStatus = await GetStatuses (commit);
+            var artifactsUri = commitStatus.FirstOrDefault (s => s.context == "artifacts.json")?.target_url;
+            
+            var artifactsStream = await client.GetStreamAsync (artifactsUri);
             var artifact = (await JsonSerializer.DeserializeAsync<Artifacts[]>(artifactsStream))[0];
-
-            var parts = artifact.url.Split (new [] {'/'});
-
-            var commit = parts[parts.Length - 2];
             Console.WriteLine ($"commit = {commit}");
-            var mono = new MonoExternal (){
+
+            var mono = new MonoExternal () {
                 url = artifact.url,
                 version = artifact.version,
                 productId = artifact.productId,
@@ -72,6 +74,16 @@ namespace InsertMonoAddin
                 writer.Flush();
             }
         }
+
+        public static async Task<Status[]> GetStatuses (string commit)
+        {
+            client.DefaultRequestHeaders.Add ("Accept", "*/*");
+            client.DefaultRequestHeaders.Add ("User-Agent", "curl/7.54.0");
+            var location = new Uri($"https://api.github.com/repos/mono/mono/commits/{commit}/status");
+            var stream = await client.GetStreamAsync (location);
+            var result = await JsonSerializer.DeserializeAsync<StatusResult> (stream);
+            return result.statuses;
+        }
     }
 
     public class Artifacts {
@@ -83,6 +95,7 @@ namespace InsertMonoAddin
         public string releaseId { get; set; }
         public string version { get; set; }
     }
+    
     public class MonoExternal {
         public string url { get; set; }
         public string version { get; set; }
@@ -95,5 +108,21 @@ namespace InsertMonoAddin
         public string sha256 { get; set; }
         public string md5 { get; set; }
         public long size { get; set; }
+    }
+
+    public class StatusResult {
+        public Status[] statuses { get; set; }
+    }
+    public class Status {
+        public string url { get; set; }
+        public string avatar_url { get; set; }
+        public long id { get; set; }
+        public string node_id { get; set; }
+        public string state { get; set; }
+        public string description { get; set; }
+        public string target_url { get; set; }
+        public string context { get; set; }
+        public string created_at { get; set; }
+        public string updated_at { get; set; }
     }
 }
