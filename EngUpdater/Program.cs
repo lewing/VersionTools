@@ -8,9 +8,11 @@ using System.IO;
 using System.Text;
 using System.Linq;
 using System.Text.Json;
+using Mono.Options;
 
 namespace EngUpdater
 {
+
     public class VersionDetails {
         public string Name;
         public string Version;
@@ -29,18 +31,61 @@ namespace EngUpdater
         static string VersionsPath = "eng/Versions.props";
         static string PackagesPath = "eng/Packages.props";
         static string VersionDetailsPath = "eng/Version.Details.xml";
+        static bool Verbose = false;
+
+        static List<string> ProcessArguments (string [] args)
+        {
+            var help = false;
+            var options = new OptionSet {
+                $"Usage: dotnet run -- OPTIONS* <msbuild repository>",
+                "",
+                "Automates version updates for mono/msbuild",
+                "",
+                "Copyright 2019 Microsoft Corporation",
+                "",
+                "Options:",
+                { "h|help|?",
+                    "Show this message and exit",
+                    v => help = v != null},
+                { "toolset-repo=",
+                    "toolset repository - normally \"dotnet/toolset\"",
+                    v => ToolsetRepo = v },
+                { "toolset-branch=",
+                    "toolset branch to source from",
+                    v => ToolsetBranch = v },
+                { "msbuild-repo=",
+                    "msbuild repository - normally \"mono/msbuild",
+                    v => MSBuildRepo = v },
+                { "msbuild-branch=",
+                    "msbuild branch to source from",
+                    v => MSBuildBranch = v },
+                { "v|verbose",
+                    "Output information about progress during the run of the tool",
+                    v => Verbose = true },
+            };
+
+            var remaining = options.Parse (args);
+
+            if (help || args.Length< 1) {
+                options.WriteOptionDescriptions (Console.Out);
+                Environment.Exit (0);
+                }
+
+            return remaining;
+        }
 
         static async Task Main(string[] args)
         {
             string msbuildPath = null;
 
-            switch (args.Length) {
+            var remaining = ProcessArguments (args);
+            switch (remaining.Count) {
                 case 1:
-                msbuildPath = args[0];
+                msbuildPath = remaining[0];
                 break;
                 case 2:
-                ToolsetBranch = args[0];
-                msbuildPath = args[1];
+                ToolsetBranch = remaining[0];
+                msbuildPath = remaining[1];
                 break;
                 default:
                 break;
