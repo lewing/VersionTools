@@ -24,10 +24,10 @@ namespace InsertMonoAddin
             await UpdateMdAddins (commit, mdAddinsPath);
         }
 
-        public static async Task UpdateMdAddins (string commit, string mdAddinsPath) {
-            var commitStatus = await GetStatuses (commit);
-            var artifactsUri = commitStatus.FirstOrDefault (s => s.context == "artifacts.json")?.target_url;
-            
+        public static async Task UpdateMdAddins (string commitOrBranch, string mdAddinsPath) {
+            var status = await GetStatuses (commitOrBranch);
+            var artifactsUri = status.statuses.FirstOrDefault (s => s.context == "artifacts.json")?.target_url;
+            var commit = status.sha;
             var artifactsStream = await client.GetStreamAsync (artifactsUri);
             var artifact = (await JsonSerializer.DeserializeAsync<Artifacts[]>(artifactsStream))[0];
             Console.WriteLine ($"commit = {commit}");
@@ -75,14 +75,14 @@ namespace InsertMonoAddin
             }
         }
 
-        public static async Task<Status[]> GetStatuses (string commit)
+        public static async Task<StatusResult> GetStatuses (string commit)
         {
             client.DefaultRequestHeaders.Add ("Accept", "*/*");
             client.DefaultRequestHeaders.Add ("User-Agent", "curl/7.54.0");
             var location = new Uri($"https://api.github.com/repos/mono/mono/commits/{commit}/status");
             var stream = await client.GetStreamAsync (location);
             var result = await JsonSerializer.DeserializeAsync<StatusResult> (stream);
-            return result.statuses;
+            return result;
         }
     }
 
@@ -95,7 +95,7 @@ namespace InsertMonoAddin
         public string releaseId { get; set; }
         public string version { get; set; }
     }
-    
+
     public class MonoExternal {
         public string url { get; set; }
         public string version { get; set; }
@@ -112,6 +112,7 @@ namespace InsertMonoAddin
 
     public class StatusResult {
         public Status[] statuses { get; set; }
+        public string sha { get; set; }
     }
     public class Status {
         public string url { get; set; }
