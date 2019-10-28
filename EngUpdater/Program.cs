@@ -134,9 +134,9 @@ namespace EngUpdater
                 packagesOutputStream = File.Create (Path.Combine (path, "eng/Packages.props"));
             }
 
-            await UpdateProps (versionsTargetStream, versionsOutputStream, versions, true);
-            await UpdateDetails (detailsTargetStream, detailsOutputStream, details);
-            await UpdateProps (packagesTargetStream, packagesOutputStream, versions, true);
+            var updatedVersions = await UpdateProps (versionsTargetStream, versionsOutputStream, versions, true);
+            var updatedDetails = await UpdateDetails (detailsTargetStream, detailsOutputStream, details);
+            var updatedPackages = await UpdateProps (packagesTargetStream, packagesOutputStream, versions, true);
         }
 
         public static async Task<Dictionary<string,VersionDetails>> ReadVersionDetails (Stream stream)
@@ -202,31 +202,37 @@ namespace EngUpdater
             }
         }
 
-        public static async Task UpdateProps (Stream inputStream, Stream outputStream, Dictionary<string,string> versions, bool stripPackage = false)
+        public static async Task<Dictionary<string,string>> UpdateProps (Stream inputStream, Stream outputStream, Dictionary<string,string> versions, bool stripPackage = false)
         {
             XmlWriterSettings settings = new XmlWriterSettings ();
             settings.Encoding = new UTF8Encoding (false);
             settings.Indent = true;
+            var updatedValues = new Dictionary<string,string> ();
 
             using (var reader = XmlReader.Create (inputStream, new XmlReaderSettings { Async = true })) {
                 using (var writer = outputStream != null ? XmlWriter.Create (outputStream, settings) : XmlWriter.Create (Console.Out)) {
                     while (await reader.ReadAsync ()) {
                         var name = stripPackage ? reader.Name.Replace ("Version", "PackageVersion") : reader.Name;
                         if (reader.NodeType == XmlNodeType.Element && versions.TryGetValue (name, out var value)) {
-                            writer.WriteUpdatedElementString (reader, value);
+                            var oldValue = writer.WriteUpdatedElementString (reader, value);
+                            if (value != oldValue)
+                                updatedValues [name] = value;
                         } else {
                             writer.WriteNode (reader);
                         }
                     }
                 }
             }
+
+            return updatedValues;
         }
 
-        public static async Task UpdateDetails (Stream inputStream, Stream outputStream, Dictionary<string,VersionDetails> versions)
+        public static async Task<Dictionary<string,VersionDetails>> UpdateDetails (Stream inputStream, Stream outputStream, Dictionary<string,VersionDetails> versions)
         {
             XmlWriterSettings settings = new XmlWriterSettings ();
             settings.Indent = true;
             settings.Encoding = new UTF8Encoding (false);
+            var updatedDetails = new Dictionary<String,VersionDetails> ();
 
             using (var reader = XmlReader.Create (inputStream, new XmlReaderSettings { Async = true })) {
                 using (var writer = outputStream != null ? XmlWriter.Create (outputStream, settings) : XmlWriter.Create (Console.Out)) {
@@ -235,6 +241,8 @@ namespace EngUpdater
                             var name = reader.GetAttribute ("Name");
                             if (versions.TryGetValue (name, out var details)) {
                                 var oldDetails = writer.WriteDependency (reader, details);
+                                if (details.Version != oldDetails.Version)
+                                    updatedDetails [name] = oldDetails;
                             } else {
                                 writer.WriteNode (reader);
                             }
@@ -244,6 +252,8 @@ namespace EngUpdater
                     }
                 }
             }
+
+            return updatedDetails;
         }
     }
 
