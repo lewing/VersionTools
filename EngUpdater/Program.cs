@@ -214,7 +214,7 @@ namespace EngUpdater
                     while (await reader.ReadAsync ()) {
                         var name = stripPackage ? reader.Name.Replace ("Version", "PackageVersion") : reader.Name;
                         if (reader.NodeType == XmlNodeType.Element && versions.TryGetValue (name, out var value)) {
-                            var oldValue = writer.WriteUpdatedElementString (reader, value);
+                            var oldValue = writer.WriteUpdatedElementString (reader, value, true);
                             if (value != oldValue)
                                 updatedValues [name] = value;
                         } else {
@@ -258,13 +258,13 @@ namespace EngUpdater
     }
 
     public static class XmlIOExtensions {
-        public static string WriteUpdatedElementString (this XmlWriter writer, XmlReader reader, string value)
+        public static string WriteUpdatedElementString (this XmlWriter writer, XmlReader reader, string value, bool checkDigit = false)
         {
             writer.WriteNode (reader);
             reader.Read ();
             var oldValue = reader.Value;
 
-            if (Char.IsDigit (oldValue[0])) {
+            if (!checkDigit || Char.IsDigit (oldValue[0])) {
                 writer.WriteString (value);
             } else {
                 writer.WriteNode (reader);
@@ -337,22 +337,29 @@ namespace EngUpdater
             if (details.CoherentParentDependency != null)
                 writer.WriteAttributeString ("CoherentParentDependency", reader.NamespaceURI, details.CoherentParentDependency);
 
+            bool wroteUri = false, wroteSha = false;
             while (reader.Read()) {
                 switch (reader.NodeType) {
                 case XmlNodeType.Element:
                     if (reader.Name == "Uri") {
                         oldDetails.Uri = writer.WriteUpdatedElementString (reader, details.Uri);
+                        wroteUri = true;
                     } else if (reader.Name == "Sha") {
                         oldDetails.Sha = writer.WriteUpdatedElementString (reader, details.Sha);
+                        wroteSha = true;
                     } else {
                         writer.WriteNode (reader);
                     }
                     break;
                 case XmlNodeType.EndElement:
                     writer.WriteNode (reader);
-                    if (reader.Name == "Dependency")
+                    if (reader.Name == "Dependency") {
+                        if (!(wroteSha && wroteUri)) {
+                            throw new Exception ("Something was missed");
+                        }
+                    
                         return oldDetails;
-
+                    }
                     break;
                 default:
                     writer.WriteNode (reader);
