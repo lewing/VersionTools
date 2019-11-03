@@ -69,7 +69,7 @@ namespace EngUpdater
             if (help || args.Length< 1) {
                 options.WriteOptionDescriptions (Console.Out);
                 Environment.Exit (0);
-                }
+            }
 
             return remaining;
         }
@@ -114,9 +114,9 @@ namespace EngUpdater
                 var vkey = $"{detail.Name.Replace (".", "")}PackageVersion";
 
                 if (versions.TryGetValue (vkey, out var version)) {
-                    Console.WriteLine ($"{vkey}: {version} ====> {detail.Version} - {detail.Uri} - {detail.Sha}");
+                    if (Verbose) Console.WriteLine ($"{vkey}: {version} ====> {detail.Version} - {detail.Uri} - {detail.Sha}");
                 } else {
-                    Console.WriteLine ($"No match for {vkey}");
+                    if (Verbose) Console.WriteLine ($"No match for {vkey}");
                 }
             }
 
@@ -137,6 +137,13 @@ namespace EngUpdater
             var updatedVersions = await UpdateProps (versionsTargetStream, versionsOutputStream, versions, true);
             var updatedDetails = await UpdateDetails (detailsTargetStream, detailsOutputStream, details);
             var updatedPackages = await UpdateProps (packagesTargetStream, packagesOutputStream, versions, true);
+
+            Console.WriteLine ($"Bump versions from {ToolsetRepo} at {ToolsetBranch} on {DateTimeOffset.Now}\n");
+            Console.WriteLine ("```");
+            foreach (var name in updatedDetails.Keys) {
+                Console.WriteLine ($"{name}: {details[name].Version} (from {updatedDetails[name].Version})");
+            }
+            Console.WriteLine ("```");
         }
 
         public static async Task<Dictionary<string,VersionDetails>> ReadVersionDetails (Stream stream)
@@ -185,7 +192,7 @@ namespace EngUpdater
                         if (key.Contains ("Version") && Char.IsDigit (value[0])) {
                             var packageKey = !key.EndsWith ("PackageVersion") ? key.Replace ("Version", "PackageVersion") : key;
                             settings[packageKey] = value;
-                            Console.WriteLine ($"{packageKey} => {value}");
+                            if (Verbose) Console.WriteLine ($"{packageKey} => {value}");
                         }
                         break;
                     case XmlNodeType.Element:
