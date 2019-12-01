@@ -96,8 +96,10 @@ namespace EngUpdater
 
         public static async Task UpdateXml (string path)
         {
-            var versionsSourceStream = await GitHub.GetRaw (ToolsetRepo, ToolsetBranch, VersionsPath);
-            var detailsSourceStream = await GitHub.GetRaw (ToolsetRepo, ToolsetBranch, VersionDetailsPath);
+            var toolsetBranchHead = await GitHub.GetBranchHead(ToolsetRepo, ToolsetBranch);
+
+            var versionsSourceStream = await GitHub.GetRaw (ToolsetRepo, toolsetBranchHead, VersionsPath);
+            var detailsSourceStream = await GitHub.GetRaw (ToolsetRepo, toolsetBranchHead, VersionDetailsPath);
 
             var versionsTargetStream = await GitHub.GetRaw (MSBuildRepo, MSBuildBranch, VersionsPath);
             var packagesTargetStream = await GitHub.GetRaw (MSBuildRepo, MSBuildBranch, PackagesPath);
@@ -138,7 +140,7 @@ namespace EngUpdater
             var updatedDetails = await UpdateDetails (detailsTargetStream, detailsOutputStream, details);
             var updatedPackages = await UpdateProps (packagesTargetStream, packagesOutputStream, versions, true);
 
-            Console.WriteLine ($"Bump versions from {ToolsetRepo} at {ToolsetBranch} on {DateTimeOffset.Now}\n");
+            Console.WriteLine ($"Bump versions from {ToolsetRepo} at {ToolsetBranch} commit {toolsetBranchHead}");
             Console.WriteLine ("```");
             foreach (var name in updatedDetails.Keys) {
                 Console.WriteLine ($"{name}: {details[name].Version} (from {updatedDetails[name].Version})");
@@ -422,8 +424,7 @@ namespace EngUpdater
 
         public static Task<Stream> GetRaw (string repo, string version, string path)
         {
-            var location = new Uri($"https://raw.githubusercontent.com/{repo}/{version}/{path}");
-            return client.GetStreamAsync (location);
+            return client.GetStreamAsync (new Uri ($"https://raw.githubusercontent.com/{repo}/{version}/{path}"));
         }
 
         static ValueTask<T> DeserializeAsync<T> (Stream stream, T example)
@@ -431,6 +432,28 @@ namespace EngUpdater
             return JsonSerializer.DeserializeAsync<T> (stream);
         }
 
+        public static async Task<string> GetBranchHead(string repo, string branch)
+        {
+            try {
+                client.DefaultRequestHeaders.Add ("Accept", "*/*");
+                client.DefaultRequestHeaders.Add ("User-Agent", "curl/7.54.0");
+
+                var uriString = $"https://api.github.com/repos/{repo}/git/ref/heads/{branch}";
+
+                string sha = String.Empty;
+                var stream = await client.GetStreamAsync (new Uri (uriString));
+                var jdoc = JsonDocument.Parse(stream);
+                if (jdoc.RootElement.TryGetProperty ("object", out var objJsonElement) &&
+                    objJsonElement.TryGetProperty ("sha", out var shaJsonElement)) {
+                    sha = shaJsonElement.GetString();
+                }
+
+                return sha;
+            } catch (Exception e) {
+                Console.WriteLine (e.ToString ());
+                return String.Empty;
+            }
+        }
         public static async Task<(string sha, DateTimeOffset date) []> GetCommits(string repo, string path)
         {
             try {
