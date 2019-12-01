@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Xml;
 using System.Net.Http;
 using System.Threading.Tasks;
