@@ -118,6 +118,8 @@ namespace EngUpdater
             /* Alias nuget here?? */
             if (versions.TryGetValue ("NuGetBuildTasksPackageVersion", out var ver))
                 versions ["NuGetPackagePackageVersion"] = ver;
+            if (versions.TryGetValue ("MicrosoftNETCoreCompilersPackageVersion", out var roslyn_ver))
+                versions [VersionUpdater.RoslynPackagePropertyName] = roslyn_ver;
 
             Stream detailsOutputStream = null;
             Stream versionsOutputStream = null;
@@ -133,11 +135,15 @@ namespace EngUpdater
             var updatedDetails = await VersionUpdater.UpdateDetails (detailsTargetStream, detailsOutputStream, details);
             var updatedPackages = await VersionUpdater.UpdateProps (packagesTargetStream, packagesOutputStream, versions, true);
 
-            Console.WriteLine ($"Bump versions from {config.ToolsetRepo} at {config.ToolsetBranch} commit {toolsetBranchHead}");
+            Console.WriteLine ($"Bump versions from {config.ToolsetRepo} at {config.ToolsetBranch}");
+            Console.WriteLine ();
+            Console.WriteLine ($"Based on commit {toolsetBranchHead}");
             Console.WriteLine ("```");
             foreach (var name in updatedDetails.Keys) {
-                Console.WriteLine ($"{name}: {details[name].Version} (from {updatedDetails[name].Version})");
+                Console.WriteLine ($"{name,-40}: {details[name].Version} (from {updatedDetails[name].Version})");
             }
+            if (updatedVersions.TryGetValue (VersionUpdater.RoslynPackagePropertyName, out var compiler_ver))
+                Console.WriteLine ($"{Environment.NewLine}{"Microsoft.Net.Compilers/Roslyn",-40}: {compiler_ver}");
             Console.WriteLine ("```");
         }
     }
