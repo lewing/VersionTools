@@ -22,6 +22,8 @@ namespace EngUpdater
 
     class VersionUpdater
     {
+        public static readonly string RoslynPackagePropertyName = "MicrosoftNetCompilersPackageVersion";
+
         public static async Task<Dictionary<string,VersionDetails>> ReadVersionDetails (Stream stream)
         {
             var versions = new Dictionary<string,VersionDetails> ();

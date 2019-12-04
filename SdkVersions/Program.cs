@@ -115,7 +115,7 @@ namespace EngUpdater
 
             Console.WriteLine();
             var versions = await VersionUpdater.ReadProps (versionsSourceStream, config.Verbose);
-            if (versions.TryGetValue ("MicrosoftNetCompilersPackageVersion", out string microsoftNetCompilersVersion))
+            if (versions.TryGetValue (VersionUpdater.RoslynPackagePropertyName, out string microsoftNetCompilersVersion))
                 Console.WriteLine($"Roslyn version in msbuild (only for building): {microsoftNetCompilersVersion}");
             else
                 Console.WriteLine($"Roslyn version in msbuild (only for building): Not found!");
