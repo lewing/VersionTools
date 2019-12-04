@@ -142,7 +142,7 @@ namespace EngUpdater
             foreach (var name in updatedDetails.Keys) {
                 Console.WriteLine ($"{name,-40}: {details[name].Version} (from {updatedDetails[name].Version})");
             }
-            if (versions.TryGetValue (VersionUpdater.RoslynPackagePropertyName, out var compiler_ver))
+            if (updatedVersions.TryGetValue (VersionUpdater.RoslynPackagePropertyName, out var compiler_ver))
                 Console.WriteLine ($"{Environment.NewLine}{"Microsoft.Net.Compilers/Roslyn",-40}: {compiler_ver}");
             Console.WriteLine ("```");
         }
