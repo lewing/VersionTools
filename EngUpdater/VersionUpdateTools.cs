@@ -1,23 +1,22 @@
 ﻿using System;
 using System.Xml;
-using System.Net.Http;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Data;
 using System.IO;
 using System.Text;
-using System.Linq;
 using System.Text.Json;
+
+#nullable enable
 
 namespace EngUpdater
 {
 
     public class VersionDetails {
-        public string Name;
-        public string Version;
-        public string Uri;
-        public string Sha;
-        public string CoherentParentDependency;
+        public string Name = String.Empty;
+        public string Version = String.Empty;
+        public string Uri = String.Empty;
+        public string Sha = String.Empty;
+        public string CoherentParentDependency = String.Empty;
     }
 
     class VersionUpdater
@@ -295,66 +294,4 @@ namespace EngUpdater
         }
     }
 
-    class GitHub {
-        static HttpClient client = new HttpClient();
-
-        public static Task<Stream> GetRaw (string repo, string version, string path)
-        {
-            return client.GetStreamAsync (new Uri ($"https://raw.githubusercontent.com/{repo}/{version}/{path}"));
-        }
-
-        static ValueTask<T> DeserializeAsync<T> (Stream stream, T example)
-        {
-            return JsonSerializer.DeserializeAsync<T> (stream);
-        }
-
-        public static async Task<string> GetBranchHead(string repo, string branch, bool verbose = false)
-        {
-            try {
-                client.DefaultRequestHeaders.Add ("Accept", "*/*");
-                client.DefaultRequestHeaders.Add ("User-Agent", "curl/7.54.0");
-
-                var uriString = $"https://api.github.com/repos/{repo}/git/ref/heads/{branch}";
-
-                string sha = String.Empty;
-                var stream = await client.GetStreamAsync (new Uri (uriString));
-                var jdoc = JsonDocument.Parse(stream);
-                if (jdoc.RootElement.TryGetProperty ("object", out var objJsonElement) &&
-                    objJsonElement.TryGetProperty ("sha", out var shaJsonElement)) {
-                    sha = shaJsonElement.GetString();
-                }
-
-                return sha;
-            } catch (Exception e) {
-                if (verbose)
-                    Console.WriteLine (e.ToString ());
-                return String.Empty;
-            }
-        }
-        public static async Task<(string sha, DateTimeOffset date) []> GetCommits(string repo, string path)
-        {
-            try {
-                client.DefaultRequestHeaders.Add ("Accept", "*/*");
-                client.DefaultRequestHeaders.Add ("User-Agent", "curl/7.54.0");
-
-                var stream = await client.GetStreamAsync (new Uri ($"https://api.github.com/repos/{repo}/commits?path={path}"));
-
-                var obj = new [] {
-                    new {
-                        sha = "",
-                        commit = new {
-                            author = new {
-                                date = DateTimeOffset.Now
-                            }
-                        }
-                    }
-                };
-
-                return (await DeserializeAsync (stream, obj)).Select (o => ValueTuple.Create (o.sha, o.commit.author.date)).ToArray ();
-            } catch (Exception e) {
-                Console.WriteLine (e.ToString ());
-                return Array.Empty<(string sha, DateTimeOffset date)> ();
-            }
-        }
-    }
 }
