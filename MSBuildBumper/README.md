@@ -1,6 +1,6 @@
 # MSBuildBumper
 
-Bumps msbuild reference in mono's `packaging/MacSDK/msbuild.py`. This can find existing pull requests and update them, if required, or open new ones.
+Bumps msbuild reference in mono's `packaging/MacSDK/msbuild.py`. This can find existing pull requests and update them, if required, or open new ones. By default, it looks for PRs with branch names like `bump_msbuild_*`.
 
 Prerequisites:
 
@@ -21,3 +21,5 @@ Usage:
 `dotnet exec bin/Debug/netcoreapp3.1/MSBuildBumper.dll  --mono-working-dir ~/dev/mono-for-updates/ --msbuild-branch mono-2019-10  --mono-branch 2019-10 @args.rsp`
 
 - Use `-n` to make only local changes and *not* git-push to remote
+
+- To update a specific PR, pass the PR number as the last argument
