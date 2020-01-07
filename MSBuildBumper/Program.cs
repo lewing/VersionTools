@@ -37,6 +37,9 @@ namespace MSBuildBumper
 
     class Program
     {
+        private const string MicrosoftNetCompilersVersionKey = "MicrosoftNetCompilersVersion";
+        private const string MicrosoftNetCompilersPackageVersionKey = "MicrosoftNetCompilersPackageVersion";
+        private const string VersionsPropsFileName = "eng/Versions.props";
         static string MSBuildPyPath = "packaging/MacSDK/msbuild.py";
         static string BranchPrefix = "bump_msbuild";
         static string MSBuildPyRefRegexString = "revision *= *'([0-9a-fA-F]*)'";
@@ -162,10 +165,10 @@ namespace MSBuildBumper
                 local_branch_name = $"{BranchPrefix}_{config.MonoBranch}_{Guid.NewGuid ()}";
             } 
 
-            string msbuildBranchHead;
+            string msbuildBranchHead, msbuildRefInMono;
             try {
                 bool required;
-                (required, msbuildBranchHead, _) = await IsMSBuildBumpRequired (
+                (required, msbuildBranchHead, msbuildRefInMono) = await IsMSBuildBumpRequired (
                                                                     msbuild_repo:      config.MSBuildRepo,
                                                                     msbuild_branch:    config.MSBuildBranch,
                                                                     mono_repo:         remote_mono_repo,
@@ -204,6 +207,9 @@ namespace MSBuildBumper
                 return;
             }
 
+            if (!config.DryRun && pr != null)
+                Console.WriteLine ($"---- Updated PR: {pr.HTML_URL} ---");
+
             if (!config.DryRun && pr == null) {
                 // Create new pull request
                 var title = $"[{config.MonoBranch}] Bump msbuild to track {config.MSBuildBranch}";
@@ -221,6 +227,28 @@ namespace MSBuildBumper
                 } else {
                     Console.WriteLine ("Failed to create PR.");
                 }
+            }
+
+            await CheckRoslyn (config.MSBuildRepo, msbuildRefInMono, msbuildBranchHead, config.Verbose);
+        }
+
+        static async Task CheckRoslyn(string msbuild_repo, string old_msbuild_ref, string new_msbuild_ref, bool verbose = false)
+        {
+            using var new_fs = await GitHub.GetRaw (msbuild_repo, new_msbuild_ref, VersionsPropsFileName, verbose);
+            using var old_fs = await GitHub.GetRaw (msbuild_repo, old_msbuild_ref, VersionsPropsFileName, verbose);
+
+            var new_props = await VersionUpdater.ReadProps (new_fs, verbose);
+            var old_props = await VersionUpdater.ReadProps (old_fs, verbose);
+
+            if ((new_props.TryGetValue (MicrosoftNetCompilersVersionKey, out var new_version) ||
+                new_props.TryGetValue (MicrosoftNetCompilersPackageVersionKey, out new_version)) &&
+                (old_props.TryGetValue (MicrosoftNetCompilersVersionKey, out var old_version) ||
+                old_props.TryGetValue (MicrosoftNetCompilersPackageVersionKey, out old_version))) {
+                if (string.Compare (new_version, old_version) != 0) {
+                    Console.WriteLine ($"** NOTE: Roslyn will need an update. It changed from '{old_version}' to '{new_version}'");
+                }
+            } else {
+                Console.WriteLine ($"Error: Could not read roslyn versions.");
             }
         }
 

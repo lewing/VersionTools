@@ -9,9 +9,7 @@
   <ItemGroup>
     <Compile Include="..\EngUpdater\Options.cs" />
     <Compile Include="..\EngUpdater\GitHub.cs" />
-
-    <None Include="prep_repo.sh" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="update_ref.sh" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\EngUpdater\VersionUpdateTools.cs" />
 
     <PackageReference Include="LibGit2Sharp" Version="0.27.0-preview-0034" />
     <PackageReference Include="System.Linq.Async" Version="4.0.0" />
