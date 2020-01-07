@@ -249,6 +249,14 @@ namespace MSBuildBumper
             } else {
                 Console.WriteLine ($"Error: Could not read roslyn versions.");
             }
+
+            if (new_props.TryGetValue ("NuGetBuildTasksPackageVersion", out var nuget_tasks_version)) {
+                // get the version from mono's nuget.py
+                var nugetExeSourceStream = await GitHub.GetRaw (mono_repo, mono_branch_head, NuGetPyPath);
+                var nugetExeVersion = await GetRegexGroupAsStringAsync (nugetExeSourceStream, VersionUpdater.NuGetPyVersionRegexString);
+                Console.WriteLine ($"nuget.exe: {nugetExeVersion}");
+                Console.WriteLine ($"** NOTE: NuGet.Build.Tasks version: {nuget_tasks_version}. nuget.exe version in mono: {nugetExeVersion}");
+            }
         }
 
         static async Task<PullRequest?> GetPullRequest (Configuration config)
