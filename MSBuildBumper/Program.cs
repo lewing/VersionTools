@@ -24,7 +24,6 @@ namespace MSBuildBumper
 
         public string VersionsPath = "eng/Versions.props";
         public string VersionDetailsPath = "eng/Version.Details.xml";
-        public string NuGetPyPath = "packaging/MacSDK/nuget.py";
         public string MSBuildPyPath = "packaging/MacSDK/msbuild.py";
         public string GitRemoteOriginName = "origin";
         public string GitRemoteName = String.Empty;
@@ -37,12 +36,12 @@ namespace MSBuildBumper
 
     class Program
     {
-        private const string MicrosoftNetCompilersVersionKey = "MicrosoftNetCompilersVersion";
-        private const string MicrosoftNetCompilersPackageVersionKey = "MicrosoftNetCompilersPackageVersion";
-        private const string VersionsPropsFileName = "eng/Versions.props";
+        const string MicrosoftNetCompilersVersionKey = "MicrosoftNetCompilersVersion";
+        const string MicrosoftNetCompilersPackageVersionKey = "MicrosoftNetCompilersPackageVersion";
+        const string VersionsPropsFileName = "eng/Versions.props";
         static string MSBuildPyPath = "packaging/MacSDK/msbuild.py";
         static string BranchPrefix = "bump_msbuild";
-        static string MSBuildPyRefRegexString = "revision *= *'([0-9a-fA-F]*)'";
+        static string NuGetPyPath = "packaging/MacSDK/nuget.py";
 
         static Configuration ProcessArguments (string [] args)
         {
@@ -229,10 +228,10 @@ namespace MSBuildBumper
                 }
             }
 
-            await CheckRoslyn (config.MSBuildRepo, msbuildRefInMono, msbuildBranchHead, config.Verbose);
+            await CheckRoslynAndNuGet (config.MonoRepo, config.MonoBranch, config.MSBuildRepo, msbuildRefInMono, msbuildBranchHead, config.Verbose);
         }
 
-        static async Task CheckRoslyn(string msbuild_repo, string old_msbuild_ref, string new_msbuild_ref, bool verbose = false)
+        static async Task CheckRoslynAndNuGet (string mono_repo, string mono_branch_head, string msbuild_repo, string old_msbuild_ref, string new_msbuild_ref, bool verbose = false)
         {
             using var new_fs = await GitHub.GetRaw (msbuild_repo, new_msbuild_ref, VersionsPropsFileName, verbose);
             using var old_fs = await GitHub.GetRaw (msbuild_repo, old_msbuild_ref, VersionsPropsFileName, verbose);
@@ -309,7 +308,7 @@ namespace MSBuildBumper
             var msbuild_py_full_path = Path.Combine (mono_working_dir, MSBuildPyPath);
             var contents = await File.ReadAllTextAsync (msbuild_py_full_path);
 
-            var match = Regex.Match (contents, MSBuildPyRefRegexString);
+            var match = Regex.Match (contents, VersionUpdater.MSBuildPyRefRegexString);
             if (match.Success) {
                 var old_sha = match.Groups[1].ToString ();
 
@@ -319,7 +318,7 @@ namespace MSBuildBumper
                 Commands.Stage (repo, MSBuildPyPath);
                 return true;
             } else {
-                Console.WriteLine($"error: failed to find anything for regex {MSBuildPyRefRegexString}");
+                Console.WriteLine($"error: failed to find anything for regex {VersionUpdater.MSBuildPyRefRegexString}");
                 return false;
             }
         }

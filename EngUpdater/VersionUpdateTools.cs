@@ -22,6 +22,8 @@ namespace EngUpdater
     class VersionUpdater
     {
         public static readonly string RoslynPackagePropertyName = "MicrosoftNetCompilersPackageVersion";
+        public static readonly string MSBuildPyRefRegexString = "revision *= *'([0-9a-fA-F]*)'";
+        public static readonly string NuGetPyVersionRegexString = "version *= *'([^']*)'";
 
         public static async Task<Dictionary<string,VersionDetails>> ReadVersionDetails (Stream stream)
         {
