@@ -15,9 +15,12 @@ namespace EngUpdater
     class GitHub {
         static HttpClient client = new HttpClient();
 
-        public static Task<Stream> GetRaw (string repo, string version, string path)
+        public static Task<Stream> GetRaw (string repo, string version, string path, bool verbose = false)
         {
-            return client.GetStreamAsync (new Uri ($"https://raw.githubusercontent.com/{repo}/{version}/{path}"));
+            var uri = new Uri ($"https://raw.githubusercontent.com/{repo}/{version}/{path}");
+            if (verbose)
+                Console.WriteLine ($"GetRaw {uri}");
+            return client.GetStreamAsync (uri);
         }
 
         static ValueTask<T> DeserializeAsync<T> (Stream stream, T example)
