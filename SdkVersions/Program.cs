@@ -98,11 +98,11 @@ namespace EngUpdater
             var msbuildPySourceStream = await GitHub.GetRaw (config.MonoRepo, monoBranchHead, config.MSBuildPyPath);
 
             Console.WriteLine ($"From mono repo {config.MonoRepo}, branch {config.MonoBranch} at commit {monoBranchHead}:");
-            var nugetExeVersion = await GetRegexGroupAsString(nugetExeSourceStream, "version='([0-9\\.]*)'");
+            var nugetExeVersion = await GetRegexGroupAsString(nugetExeSourceStream, VersionUpdater.NuGetPyVersionRegexString);
             Console.WriteLine ($"nuget.exe: {nugetExeVersion}");
 
             if (String.IsNullOrEmpty (config.MSBuildBranchOrSha))
-                config.MSBuildBranchOrSha = await GetRegexGroupAsString(msbuildPySourceStream, "revision *= *'([0-9a-fA-F]*)'");
+                config.MSBuildBranchOrSha = await GetRegexGroupAsString(msbuildPySourceStream, VersionUpdater.MSBuildPyRefRegexString);
             Console.WriteLine($"{Environment.NewLine}From msbuild commit: {config.MSBuildBranchOrSha}");
 
             var detailsSourceStream = await GitHub.GetRaw (config.MSBuildRepo, config.MSBuildBranchOrSha, config.VersionDetailsPath);
@@ -131,7 +131,7 @@ namespace EngUpdater
             if (match.Success) {
                 result = match.Groups[1].ToString ();
             } else {
-                Console.WriteLine("error: failed to find anything for regex {regex}");
+                Console.WriteLine($"error: failed to find anything for regex {regex}");
             }
 
             return result;
