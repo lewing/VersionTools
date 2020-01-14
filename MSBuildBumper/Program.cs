@@ -4,11 +4,13 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Mono.Options;
 using EngUpdater;
 
 using LibGit2Sharp;
+using System.Collections.Generic;
 
 #nullable enable
 
@@ -30,18 +32,17 @@ namespace MSBuildBumper
         public string GitRemoteUserName = String.Empty;
         public string PersonalAccessToken = String.Empty;
         public string? PullRequestNumber = null;
-        public bool DryRun = false;
-        public bool Verbose = false;
+        public string[]? Reviewers = null;
+        public bool DryRun;
+        public bool Verbose;
     }
 
     class Program
     {
-        const string MicrosoftNetCompilersVersionKey = "MicrosoftNetCompilersVersion";
-        const string MicrosoftNetCompilersPackageVersionKey = "MicrosoftNetCompilersPackageVersion";
         const string VersionsPropsFileName = "eng/Versions.props";
-        static string MSBuildPyPath = "packaging/MacSDK/msbuild.py";
-        static string BranchPrefix = "bump_msbuild";
-        static string NuGetPyPath = "packaging/MacSDK/nuget.py";
+        static readonly string MSBuildPyPath = "packaging/MacSDK/msbuild.py";
+        static readonly string BranchPrefix = "bump_msbuild";
+        static readonly string NuGetPyPath = "packaging/MacSDK/nuget.py";
 
         static Configuration ProcessArguments (string [] args)
         {
@@ -61,13 +62,13 @@ namespace MSBuildBumper
                 { "mono-repo=",
                     "toolset repository - normally \"mono/mono\"",
                     v => config.MonoRepo = v },
-                { "mono-branch=",
+                { "m|mono-branch=",
                     "toolset branch to source from",
                     v => config.MonoBranch = v },
                 { "msbuild-repo=",
                     "msbuild repository - normally \"mono/msbuild",
                     v => config.MSBuildRepo = v },
-                { "msbuild-branch=",
+                { "s|msbuild-branch=",
                     "msbuild branch or commit sha",
                     v => config.MSBuildBranch = v },
                 {"mono-working-dir=",
@@ -85,6 +86,9 @@ namespace MSBuildBumper
                 {"remote-name=",
                     "github remote name in the local working directory. Defaults to the same has git_user_name",
                     v => config.GitRemoteName = v },
+                {"r|reviewers=",
+                    "comma separated list of reviewer usernames",
+                    v => config.Reviewers = v?.Split (",", StringSplitOptions.RemoveEmptyEntries) },
                 { "v|verbose",
                     "Output information about progress during the run of the tool",
                     v => config.Verbose = true },
@@ -135,9 +139,6 @@ namespace MSBuildBumper
         // FIXME: doesn't work with git@ remote urls, but does git:// work?
         // FIXME: Add the shortened hash to the commit message
 
-        // FIXME: Check if nuget version changed.. inform the user about it.. or maybe even check if nuget.py needs an update
-        // FIXME: Check roslyn version also
-
         static async Task Main(string[] args)
         {
             var config = ProcessArguments (args);
@@ -145,7 +146,13 @@ namespace MSBuildBumper
             if (config.GitRemoteUserName.Length == 0)
                 config.GitRemoteUserName = config.GitRemoteName;
 
+            await CleanupUnusedBranches(config.GitRemoteUserName, config.MonoRepo, BranchPrefix, config.PersonalAccessToken, config.DryRun, config.Verbose);
+
             PullRequest? pr = await GetPullRequest (config);
+            if (pr == null && config.PullRequestNumber != null) {
+                return;
+            }
+
             string local_branch_name, remote_branch_name, remote_name, remote_mono_repo;
             if (pr != null) {
                 // We want to check if the branch for this PR, needs an update or not
@@ -179,7 +186,7 @@ namespace MSBuildBumper
                     return;
                 }
             } catch (HttpRequestException hre) {
-                Console.WriteLine ($"Error checking if bump is required: {hre.ToString ()}");
+                Console.WriteLine ($"Error checking if bump is required: {hre.Message}");
                 return;
             }
 
@@ -220,6 +227,7 @@ namespace MSBuildBumper
                                                                         personal_access_token:  config.PersonalAccessToken,
                                                                         title:                  title,
                                                                         body:                   String.Empty,
+                                                                        reviewers:              config.Reviewers,
                                                                         verbose:                config.Verbose);
                 if (result) {
                     Console.WriteLine ($"----------- Created new PR at {html_url} ----------");
@@ -231,20 +239,51 @@ namespace MSBuildBumper
             await CheckRoslynAndNuGet (config.MonoRepo, config.MonoBranch, config.MSBuildRepo, msbuildRefInMono, msbuildBranchHead, config.Verbose);
         }
 
+        static async Task CleanupUnusedBranches (string owner_name,
+                                                 string mono_repo_for_prs,
+                                                 string branch_prefix,
+                                                 string personal_access_token,
+                                                 bool dry_run = false,
+                                                 bool verbose = false)
+        {
+            var tasks = new List<Task<HttpResponseMessage>>();
+            var branchesJsonElement = await GitHub.GetJsonFromApiRequest<JsonElement>($"/repos/{owner_name}/mono/git/matching-refs/heads/{branch_prefix}");
+            foreach (var je in branchesJsonElement.EnumerateArray ()) {
+                var branch_ref = je.Get<string>("ref");
+                // this should be of the form `refs/heads/branch_name`
+                var branch_name = branch_ref.Split("/", 3)[2];
+
+                var gh_rest_url = $"/repos/{mono_repo_for_prs}/pulls?state=open&head={owner_name}:{branch_name}";
+                if (await GitHub.GetPullRequests(gh_rest_url, verbose).AnyAsync ())
+                    continue;
+
+                // delete the branch
+                if (dry_run) {
+                    Console.WriteLine($"Would delete {owner_name}:{branch_name}");
+                    continue;
+                }
+
+                gh_rest_url = $"/repos/radical/mono/git/refs/heads/{branch_name}";
+                tasks.Add (GitHub.PostOrDeleteAPI(HttpMethod.Delete, gh_rest_url, personal_access_token, String.Empty, verbose));
+                if (verbose)
+                    Console.WriteLine ($"- Deleting unused branch {owner_name}:{branch_name}");
+            }
+
+            Task.WaitAll(tasks.ToArray ());
+        }
+
         static async Task CheckRoslynAndNuGet (string mono_repo, string mono_branch_head, string msbuild_repo, string old_msbuild_ref, string new_msbuild_ref, bool verbose = false)
         {
             using var new_fs = await GitHub.GetRaw (msbuild_repo, new_msbuild_ref, VersionsPropsFileName, verbose);
             using var old_fs = await GitHub.GetRaw (msbuild_repo, old_msbuild_ref, VersionsPropsFileName, verbose);
 
-            var new_props = await VersionUpdater.ReadProps (new_fs, verbose);
-            var old_props = await VersionUpdater.ReadProps (old_fs, verbose);
+            var new_props = await VersionUpdater.ReadProps (new_fs, false);
+            var old_props = await VersionUpdater.ReadProps (old_fs, false);
 
-            if ((new_props.TryGetValue (MicrosoftNetCompilersVersionKey, out var new_version) ||
-                new_props.TryGetValue (MicrosoftNetCompilersPackageVersionKey, out new_version)) &&
-                (old_props.TryGetValue (MicrosoftNetCompilersVersionKey, out var old_version) ||
-                old_props.TryGetValue (MicrosoftNetCompilersPackageVersionKey, out old_version))) {
+            if ((new_props.TryGetValue (VersionUpdater.RoslynPackagePropertyName, out var new_version) &&
+                old_props.TryGetValue (VersionUpdater.RoslynPackagePropertyName, out var old_version))) {
                 if (string.Compare (new_version, old_version) != 0) {
-                    Console.WriteLine ($"** NOTE: Roslyn will need an update. It changed from '{old_version}' to '{new_version}'");
+                    Console.WriteLine ($"\n** NOTE: Roslyn will need an update. It changed from '{old_version}' to '{new_version}'\n");
                 }
             } else {
                 Console.WriteLine ($"Error: Could not read roslyn versions.");
@@ -254,8 +293,8 @@ namespace MSBuildBumper
                 // get the version from mono's nuget.py
                 var nugetExeSourceStream = await GitHub.GetRaw (mono_repo, mono_branch_head, NuGetPyPath);
                 var nugetExeVersion = await GetRegexGroupAsStringAsync (nugetExeSourceStream, VersionUpdater.NuGetPyVersionRegexString);
-                Console.WriteLine ($"nuget.exe: {nugetExeVersion}");
-                Console.WriteLine ($"** NOTE: NuGet.Build.Tasks version: {nuget_tasks_version}. nuget.exe version in mono: {nugetExeVersion}");
+                Console.WriteLine ($"** NOTE: NuGet.Build.Tasks version: {nuget_tasks_version}");
+                Console.WriteLine ($"         nuget.exe version in mono: {nugetExeVersion}");
             }
         }
 
@@ -271,11 +310,11 @@ namespace MSBuildBumper
                     config.MonoBranch = pr.BaseRef;
                 } catch (HttpRequestException hre) {
                     if (config.Verbose)
-                        Console.WriteLine ($"Failed to get a pull request numbered #{config.PullRequestNumber}: {hre.ToString ()}");
+                        Console.WriteLine ($"Failed to get a pull request numbered #{config.PullRequestNumber}: {hre.Message}");
                 }
             } else {
                 try {
-                    Trace ($"Trying to find a pull request against {config.MonoRepo}/{config.MonoBranch} having a name starting with {BranchPrefix}", config.Verbose); 
+                    Trace ($"Trying to find a pull request against {config.MonoRepo}/{config.MonoBranch} having a name starting with {BranchPrefix}", config.Verbose);
                     pr = await FindPullRequest (config.MonoRepo, config.MonoBranch, BranchPrefix, config.GitRemoteUserName, config.Verbose);
                     if (pr != null)
                         Trace ($"\tFound PR {pr.HTML_URL}, headrepo: {pr.HeadRepoOwner}/mono", config.Verbose);
@@ -288,6 +327,7 @@ namespace MSBuildBumper
 
             return pr;
         }
+
         static async Task<(bool required, string msbuild_branch_head, string msbuild_ref_in_mono)> IsMSBuildBumpRequired (
                                                                                               string msbuild_repo,
                                                                                               string msbuild_branch,
@@ -296,14 +336,15 @@ namespace MSBuildBumper
                                                                                               bool verbose)
         {
             Trace ($"Checking msbuild HEAD for {msbuild_repo} {msbuild_branch}, and ref in mono {mono_repo} {mono_branch}", verbose);
-            // FIXME: handle errors .. if branch not found etc..
             var branchHeadTask = GitHub.GetBranchHead (msbuild_repo, msbuild_branch, verbose);
-            var refInMonoTask = GetMSBuildReferenceInMono (mono_repo, mono_branch);
+            var refInMonoTask = GetMSBuildReferenceInMono (mono_repo, mono_branch, verbose);
 
             var results = await Task.WhenAll (branchHeadTask, refInMonoTask);
             var msbuildBranchHead = results [0];
             var msbuildRefInMono = results [1];
-            // FIXME: null check
+
+            if (msbuildRefInMono.Length == 0)
+                throw new KeyNotFoundException($"Could not find msbuild reference in mono.");
 
             Trace ($"Expected msbuild reference: {msbuildBranchHead} (from {msbuild_repo}/{msbuild_branch})", verbose);
             Trace ($"                  Mono has: {msbuildRefInMono} in {mono_repo}/{mono_branch}", verbose);
@@ -338,28 +379,25 @@ namespace MSBuildBumper
 
             var result = String.Empty;
             var match = Regex.Match (contents, regex);
-            if (match.Success) {
+            if (match.Success)
                 result = match.Groups[1].ToString ();
-            } else {
-                Console.WriteLine("error: failed to find anything for regex {regex}");
-            }
 
             return result;
         }
 
-        static async Task<string?> GetMSBuildReferenceInMono (string mono_repo, string mono_branch)
-            => await GetRegexGroupAsStringAsync(await GitHub.GetRaw(mono_repo, mono_branch, MSBuildPyPath),
+        static async Task<string?> GetMSBuildReferenceInMono (string mono_repo, string mono_branch, bool verbose = false)
+            => await GetRegexGroupAsStringAsync(await GitHub.GetRaw(mono_repo, mono_branch, MSBuildPyPath, verbose),
                                                 "revision *= *'([0-9a-fA-F]*)'");
 
         public static async Task<PullRequest> GetSinglePullRequest (string base_repo, string pr_number, bool verbose = false)
-            => await GitHub.GetPullRequests ($"https://api.github.com/repos/{base_repo}/pulls/{pr_number}", verbose)
+            => await GitHub.GetPullRequests ($"/repos/{base_repo}/pulls/{pr_number}", verbose)
                         .FirstOrDefaultAsync ();
 
         public static async Task<PullRequest> FindPullRequest (string base_repo, string base_branch, string branch_prefix, string remote_user_name, bool verbose = false)
-            => await GitHub.GetPullRequests ($"https://api.github.com/repos/{base_repo}/pulls?base={base_branch}", verbose)
+            => await GitHub.GetPullRequests ($"/repos/{base_repo}/pulls?base={base_branch}", verbose)
                         .Where (pr => pr != null &&
                                         string.Compare (pr.HeadRepoOwner, remote_user_name) == 0 &&
-                                        pr.HeadRef.StartsWith (branch_prefix))
+                                        pr.HeadRef.StartsWith (branch_prefix, StringComparison.InvariantCultureIgnoreCase))
                         .FirstOrDefaultAsync ();
 
         static void PrepareMonoWorkingDirectory (Repository repo,
