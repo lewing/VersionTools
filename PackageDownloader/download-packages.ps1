@@ -12,13 +12,14 @@ else {
 }
 
 rm -r $PACKAGE_PATH\bcl
-mv wasm-bcl $PACKAGE_PATH\bcl
+cp wasm-bcl $PACKAGE_PATH\bcl
 
 rm -r $PACKAGE_PATH\framework
-mv framework $PACKAGE_PATH\framework
+cp framework $PACKAGE_PATH\framework
 
 rm -r $PACKAGE_PATH\wasm\*
-mv builds\release\dotnet.* $PACKAGE_PATH\wasm\
+cp builds\release\dotnet.$runtime.js $PACKAGE_PATH\wasm\
+cp builds\release\dotnet.wasm $PACKAGE_PATH\wasm\
 
 cd ..
 rm wasm-package.zip

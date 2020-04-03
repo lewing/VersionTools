@@ -32,13 +32,14 @@ then
 fi
 
 rm -r $PACKAGE_PATH/bcl
-mv $FILEPATH/wasm-bcl $PACKAGE_PATH/bcl
+cp $FILEPATH/wasm-bcl $PACKAGE_PATH/bcl
 
 rm -r $PACKAGE_PATH/framework
-mv $FILEPATH/framework $PACKAGE_PATH/framework
+cp $FILEPATH/framework $PACKAGE_PATH/framework
 
 rm "$PACKAGE_PATH"/wasm/*
-mv $FILEPATH/builds/release/dotnet.* $PACKAGE_PATH/wasm/
+cp $FILEPATH/builds/release/dotnet.$RUNTIME.js $PACKAGE_PATH/wasm/
+cp $FILEPATH/builds/release/dotnet.wasm $PACKAGE_PATH/wasm/
 
 rm wasm-package.zip
 rm -rf wasm-package
