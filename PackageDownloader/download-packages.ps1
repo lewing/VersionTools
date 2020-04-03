@@ -1,5 +1,5 @@
 param ($filepath, $url, $runtime)
-$PACKAGE_PATH="~\\.nuget\\packages\\microsoft.aspnetcore.components.webassembly.runtime\\$runtime\\tools\\dotnetwasm\\"
+$PACKAGE_PATH="~\\.nuget\\packages\\microsoft.aspnetcore.components.webassembly.runtime\\$runtime\\tools\\dotnetwasm"
 
 if ($null -eq $filepath) {
 	Invoke-WebRequest -Uri $url -OutFile wasm-package.zip -UseBasicParsing
