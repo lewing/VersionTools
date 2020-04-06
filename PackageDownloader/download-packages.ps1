@@ -18,7 +18,7 @@ rm -r $PACKAGE_PATH\framework
 cp framework $PACKAGE_PATH\framework
 
 rm -r $PACKAGE_PATH\wasm\*
-cp builds\release\dotnet.$runtime.js $PACKAGE_PATH\wasm\
+cp builds\release\dotnet.js $PACKAGE_PATH\wasm\dotnet.$runtime.js
 cp builds\release\dotnet.wasm $PACKAGE_PATH\wasm\
 
 cd ..

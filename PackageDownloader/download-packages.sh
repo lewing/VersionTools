@@ -38,7 +38,7 @@ rm -r $PACKAGE_PATH/framework
 cp $FILEPATH/framework $PACKAGE_PATH/framework
 
 rm "$PACKAGE_PATH"/wasm/*
-cp $FILEPATH/builds/release/dotnet.$RUNTIME.js $PACKAGE_PATH/wasm/
+cp $FILEPATH/builds/release/dotnet.js $PACKAGE_PATH/wasm/dotnet.$runtime.js
 cp $FILEPATH/builds/release/dotnet.wasm $PACKAGE_PATH/wasm/
 
 rm wasm-package.zip
