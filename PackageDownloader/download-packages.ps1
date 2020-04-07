@@ -11,15 +11,15 @@ else {
 	cd $filepath
 }
 
-rm -r $PACKAGE_PATH\bcl
-cp wasm-bcl $PACKAGE_PATH\bcl
+rm -r $PACKAGE_PATH\bcl\*
+cp -r wasm-bcl\wasm\* $PACKAGE_PATH\bcl
 
 rm -r $PACKAGE_PATH\framework
-cp framework $PACKAGE_PATH\framework
+cp -r framework $PACKAGE_PATH\framework
 
 rm -r $PACKAGE_PATH\wasm\*
-cp builds\release\dotnet.js $PACKAGE_PATH\wasm\dotnet.$runtime.js
-cp builds\release\dotnet.wasm $PACKAGE_PATH\wasm\
+cp -r builds\release\dotnet.js $PACKAGE_PATH\wasm\dotnet.$runtime.js
+cp -r builds\release\dotnet.wasm $PACKAGE_PATH\wasm\
 
 cd ..
 rm wasm-package.zip
