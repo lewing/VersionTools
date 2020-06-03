@@ -39,9 +39,9 @@ namespace EmscriptenVerBumper
             var config = new Configuration ();
             var help = false;
             var options = new OptionSet {
-                $"Usage: dotnet run -- OPTIONS* [<specific PR number to update>]",
+                $"Usage: dotnet run -- OPTIONS*",
                 "",
-                "Bump msbuild reference in mono",
+                "Update new dockerimage with new emsdk version",
                 "",
                 "Copyright 2019 Microsoft Corporation",
                 "",
@@ -50,13 +50,13 @@ namespace EmscriptenVerBumper
                     "Show this message and exit",
                     v => help = v != null},
                 { "verions-repo=",
-                    "toolset repository - normally \"mono/mono\"",
+                    "toolset repository - normally \"dotnet/versions\"",
                     v => config.VersionsRepo = v },
                 { "m|versions-branch=",
                     "toolset branch to source from",
                     v => config.VersionsBranch = v },
                 { "runtime-repo=",
-                    "runtime repository - normally \"dotnet/versions",
+                    "runtime repository - normally \"dotnet/runtime",
                     v => config.RuntimeRepo = v },
                 { "s|runtime-branch=",
                     "runtime branch or commit sha",
