@@ -9,6 +9,8 @@ using System.Text;
 using System.Linq;
 using System.Text.Json;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics;
+using LibGit2Sharp;
 
 #nullable enable
 
@@ -211,6 +213,126 @@ namespace EngUpdater
             } else {
                 yield return PullRequest.Parse(je);
             }
+        }
+
+        public static void Trace (string message, bool verbose)
+        {
+            if (verbose)
+                Console.WriteLine (message);
+        }
+
+        /// <summary>
+        /// Reset and clean current working directory. This will ensure that the current
+        /// working directory matches the current Head commit.
+        /// </summary>
+        /// <param name="repo">Repository whose current working directory should be operated on.</param>
+        public static void ResetAndCleanWorkingDirectory(IRepository repo)
+        {
+            // Reset the index and the working tree.
+            repo.Reset(ResetMode.Hard);
+
+            // Clean the working directory.
+            repo.RemoveUntrackedFiles();
+        }
+        public static void PrepareMonoWorkingDirectory (Repository repo,
+                                                   string mono_working_dir,
+                                                   string remote_name,
+                                                   string remote_branch_name,
+                                                   string local_branch_name,
+                                                   bool verbose)
+        {
+            // git reset --hard + git-clean
+            Console.WriteLine ($"Reseting working dir {mono_working_dir}");
+            ResetAndCleanWorkingDirectory (repo);
+
+            // git fetch origin
+            Console.WriteLine ($"Fetching from {remote_name}");
+            // FIXME: how can we use git@ ?
+            // repo.Network.Remotes.Add ("origin-https", $"https://github.com/{mono_repo}");
+
+            // Commands.Fetch (repo, remote_name, new string[0], null, null);
+            GitCommand ($"fetch {remote_name}", repo.Info.Path, dry_run: false);
+
+            var remote_ref = $"{remote_name}/{remote_branch_name}";
+            var branch = repo.Branches [local_branch_name];
+            if (branch != null) {
+                Trace ($"git checkout {local_branch_name}", verbose);
+                Commands.Checkout (repo, local_branch_name);
+
+                Trace ($"git reset --hard {remote_ref}", verbose);
+                repo.Reset (ResetMode.Hard, remote_ref);
+            } else {
+                Trace ($"git branch {local_branch_name} {remote_ref}", verbose);
+                repo.Branches.Add (local_branch_name, $"{remote_name}/{remote_branch_name}");
+                
+                Trace ($"git checkout {local_branch_name}", verbose);
+                Commands.Checkout (repo, local_branch_name);
+            }
+        }
+
+        public static async Task CleanupUnusedBranches (string owner_name,
+                                                 string mono_repo_for_prs,
+                                                 string branch_prefix,
+                                                 string personal_access_token,
+                                                 bool dry_run = false,
+                                                 bool verbose = false)
+        {
+            var tasks = new List<Task<HttpResponseMessage>>();
+            var branchesJsonElement = await GetJsonFromApiRequest<JsonElement>($"/repos/{owner_name}/mono/git/matching-refs/heads/{branch_prefix}");
+            foreach (var je in branchesJsonElement.EnumerateArray ()) {
+                var branch_ref = je.Get<string>("ref");
+                // this should be of the form `refs/heads/branch_name`
+                var branch_name = branch_ref.Split("/", 3)[2];
+
+                var gh_rest_url = $"/repos/{mono_repo_for_prs}/pulls?state=open&head={owner_name}:{branch_name}";
+                if (await GetPullRequests(gh_rest_url, verbose).AnyAsync ())
+                    continue;
+
+                // delete the branch
+                if (dry_run) {
+                    Console.WriteLine($"Would delete {owner_name}:{branch_name}");
+                    continue;
+                }
+
+                gh_rest_url = $"/repos/radical/mono/git/refs/heads/{branch_name}";
+                tasks.Add (GitHub.PostOrDeleteAPI(HttpMethod.Delete, gh_rest_url, personal_access_token, String.Empty, verbose));
+                if (verbose)
+                    Console.WriteLine ($"- Deleting unused branch {owner_name}:{branch_name}");
+            }
+
+            Task.WaitAll(tasks.ToArray ());
+        } 
+
+        public static bool GitCommand (string command_line, string working_dir, bool dry_run)
+            => RunCommand ("git", command_line + (dry_run ? " -n" : String.Empty), working_dir);
+
+        public static bool GitPush (string mono_work_dir, string remote_name, string remote_branch_name, string local_branch_name, bool dry_run)
+            => GitCommand ($"push {remote_name} {local_branch_name}:{remote_branch_name}", mono_work_dir, dry_run);
+
+        public static bool RunCommand (string command_name, string command_line, string working_dir)
+        {
+            Console.WriteLine ($"$ {command_name} {command_line}");
+            var p = Process.Start (new ProcessStartInfo {
+                            FileName = command_name,
+                            Arguments = command_line,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            WorkingDirectory = working_dir
+                        });
+
+            p.WaitForExit ();
+
+            var stdout_str = p.StandardOutput.ReadToEnd ();
+            var stderr_str = p.StandardError.ReadToEnd ();
+            if (stdout_str.Length > 0)
+                Console.WriteLine (stdout_str);
+            if (stderr_str.Length > 0)
+                Console.WriteLine (stderr_str);
+
+            if (p.ExitCode != 0)
+                Console.WriteLine ($"Error: exitcode: {p.ExitCode}");
+
+            return p.ExitCode == 0;
         }
     }
 
