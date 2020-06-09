@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Threading.Tasks;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -146,7 +145,7 @@ namespace MSBuildBumper
             if (config.GitRemoteUserName.Length == 0)
                 config.GitRemoteUserName = config.GitRemoteName;
 
-            await CleanupUnusedBranches(config.GitRemoteUserName, config.MonoRepo, BranchPrefix, config.PersonalAccessToken, config.DryRun, config.Verbose);
+            await GitHub.CleanupUnusedBranches(config.GitRemoteUserName, config.MonoRepo, BranchPrefix, config.PersonalAccessToken, config.DryRun, config.Verbose);
 
             PullRequest? pr = await GetPullRequest (config);
             if (pr == null && config.PullRequestNumber != null) {
@@ -163,7 +162,7 @@ namespace MSBuildBumper
                 // Use the branch name that the PR uses
                 local_branch_name = pr.HeadRef;
             } else {
-                Trace ($"no pr found, setting remote_mono_repo to {config.MonoRepo}", config.Verbose);
+                GitHub.Trace ($"no pr found, setting remote_mono_repo to {config.MonoRepo}", config.Verbose);
 
                 remote_mono_repo = config.MonoRepo;
                 remote_branch_name = config.MonoBranch;
@@ -191,7 +190,7 @@ namespace MSBuildBumper
             }
 
             Repository repo = new Repository (config.MonoWorkingDir);
-            PrepareMonoWorkingDirectory (repo:                repo,
+            GitHub.PrepareMonoWorkingDirectory (repo:                repo,
                                          mono_working_dir:    config.MonoWorkingDir,
                                          remote_name:         remote_name,
                                          remote_branch_name:  remote_branch_name,
@@ -208,7 +207,7 @@ namespace MSBuildBumper
             var sig = repo.Config.BuildSignature (DateTimeOffset.Now);
             repo.Commit (commit_msg, sig, sig);
 
-            if (!GitPush (config.MonoWorkingDir, config.GitRemoteName, local_branch_name, local_branch_name, config.DryRun)) {
+            if (!GitHub.GitPush (config.MonoWorkingDir, config.GitRemoteName, local_branch_name, local_branch_name, config.DryRun)) {
                 Console.WriteLine ($"Error: git push failed");
                 return;
             }
@@ -237,39 +236,6 @@ namespace MSBuildBumper
             }
 
             await CheckRoslynAndNuGet (config.MonoRepo, config.MonoBranch, config.MSBuildRepo, msbuildRefInMono, msbuildBranchHead, config.Verbose);
-        }
-
-        static async Task CleanupUnusedBranches (string owner_name,
-                                                 string mono_repo_for_prs,
-                                                 string branch_prefix,
-                                                 string personal_access_token,
-                                                 bool dry_run = false,
-                                                 bool verbose = false)
-        {
-            var tasks = new List<Task<HttpResponseMessage>>();
-            var branchesJsonElement = await GitHub.GetJsonFromApiRequest<JsonElement>($"/repos/{owner_name}/mono/git/matching-refs/heads/{branch_prefix}");
-            foreach (var je in branchesJsonElement.EnumerateArray ()) {
-                var branch_ref = je.Get<string>("ref");
-                // this should be of the form `refs/heads/branch_name`
-                var branch_name = branch_ref.Split("/", 3)[2];
-
-                var gh_rest_url = $"/repos/{mono_repo_for_prs}/pulls?state=open&head={owner_name}:{branch_name}";
-                if (await GitHub.GetPullRequests(gh_rest_url, verbose).AnyAsync ())
-                    continue;
-
-                // delete the branch
-                if (dry_run) {
-                    Console.WriteLine($"Would delete {owner_name}:{branch_name}");
-                    continue;
-                }
-
-                gh_rest_url = $"/repos/radical/mono/git/refs/heads/{branch_name}";
-                tasks.Add (GitHub.PostOrDeleteAPI(HttpMethod.Delete, gh_rest_url, personal_access_token, String.Empty, verbose));
-                if (verbose)
-                    Console.WriteLine ($"- Deleting unused branch {owner_name}:{branch_name}");
-            }
-
-            Task.WaitAll(tasks.ToArray ());
         }
 
         static async Task CheckRoslynAndNuGet (string mono_repo, string mono_branch_head, string msbuild_repo, string old_msbuild_ref, string new_msbuild_ref, bool verbose = false)
@@ -302,7 +268,7 @@ namespace MSBuildBumper
         {
             PullRequest? pr = null;
             if (config.PullRequestNumber != null) {
-                Trace ($"Fetching pull request #{config.PullRequestNumber} in {config.MonoRepo}", config.Verbose);
+                GitHub.Trace ($"Fetching pull request #{config.PullRequestNumber} in {config.MonoRepo}", config.Verbose);
                 try {
                     pr = await GetSinglePullRequest (config.MonoRepo, config.PullRequestNumber, config.Verbose);
                     
@@ -314,12 +280,12 @@ namespace MSBuildBumper
                 }
             } else {
                 try {
-                    Trace ($"Trying to find a pull request against {config.MonoRepo}/{config.MonoBranch} having a name starting with {BranchPrefix}", config.Verbose);
+                    GitHub.Trace ($"Trying to find a pull request against {config.MonoRepo}/{config.MonoBranch} having a name starting with {BranchPrefix}", config.Verbose);
                     pr = await FindPullRequest (config.MonoRepo, config.MonoBranch, BranchPrefix, config.GitRemoteUserName, config.Verbose);
                     if (pr != null)
-                        Trace ($"\tFound PR {pr.HTML_URL}, headrepo: {pr.HeadRepoOwner}/mono", config.Verbose);
+                        GitHub.Trace ($"\tFound PR {pr.HTML_URL}, headrepo: {pr.HeadRepoOwner}/mono", config.Verbose);
                     else
-                        Trace ($"\tNo PR found matching the criteria", config.Verbose);
+                        GitHub.Trace ($"\tNo PR found matching the criteria", config.Verbose);
                 } catch (HttpRequestException hre) {
                     Console.WriteLine ($"Error: Failed to fetch mono pull requests: {hre.Message}");
                 }
@@ -335,7 +301,7 @@ namespace MSBuildBumper
                                                                                               string mono_branch,
                                                                                               bool verbose)
         {
-            Trace ($"Checking msbuild HEAD for {msbuild_repo} {msbuild_branch}, and ref in mono {mono_repo} {mono_branch}", verbose);
+            GitHub.Trace ($"Checking msbuild HEAD for {msbuild_repo} {msbuild_branch}, and ref in mono {mono_repo} {mono_branch}", verbose);
             var branchHeadTask = GitHub.GetBranchHead (msbuild_repo, msbuild_branch, verbose);
             var refInMonoTask = GetMSBuildReferenceInMono (mono_repo, mono_branch, verbose);
 
@@ -346,8 +312,8 @@ namespace MSBuildBumper
             if (msbuildRefInMono.Length == 0)
                 throw new KeyNotFoundException($"Could not find msbuild reference in mono.");
 
-            Trace ($"Expected msbuild reference: {msbuildBranchHead} (from {msbuild_repo}/{msbuild_branch})", verbose);
-            Trace ($"                  Mono has: {msbuildRefInMono} in {mono_repo}/{mono_branch}", verbose);
+            GitHub.Trace ($"Expected msbuild reference: {msbuildBranchHead} (from {msbuild_repo}/{msbuild_branch})", verbose);
+            GitHub.Trace ($"                  Mono has: {msbuildRefInMono} in {mono_repo}/{mono_branch}", verbose);
             bool bump_required = String.Compare (msbuildBranchHead, msbuildRefInMono) != 0;
             return (bump_required, msbuild_branch_head: msbuildBranchHead, msbuild_ref_in_mono: msbuildRefInMono);
         }
@@ -398,95 +364,11 @@ namespace MSBuildBumper
                         .Where (pr => pr != null &&
                                         string.Compare (pr.HeadRepoOwner, remote_user_name) == 0 &&
                                         pr.HeadRef.StartsWith (branch_prefix, StringComparison.InvariantCultureIgnoreCase))
-                        .FirstOrDefaultAsync ();
+                        .FirstOrDefaultAsync ();     
 
-        static void PrepareMonoWorkingDirectory (Repository repo,
-                                                   string mono_working_dir,
-                                                   string remote_name,
-                                                   string remote_branch_name,
-                                                   string local_branch_name,
-                                                   bool verbose)
-        {
-            // git reset --hard + git-clean
-            Console.WriteLine ($"Reseting working dir {mono_working_dir}");
-            ResetAndCleanWorkingDirectory (repo);
-
-            // git fetch origin
-            Console.WriteLine ($"Fetching from {remote_name}");
-            // FIXME: how can we use git@ ?
-            // repo.Network.Remotes.Add ("origin-https", $"https://github.com/{mono_repo}");
-
-            // Commands.Fetch (repo, remote_name, new string[0], null, null);
-            GitCommand ($"fetch {remote_name}", repo.Info.Path, dry_run: false);
-
-            var remote_ref = $"{remote_name}/{remote_branch_name}";
-            var branch = repo.Branches [local_branch_name];
-            if (branch != null) {
-                Trace ($"git checkout {local_branch_name}", verbose);
-                Commands.Checkout (repo, local_branch_name);
-
-                Trace ($"git reset --hard {remote_ref}", verbose);
-                repo.Reset (ResetMode.Hard, remote_ref);
-            } else {
-                Trace ($"git branch {local_branch_name} {remote_ref}", verbose);
-                repo.Branches.Add (local_branch_name, $"{remote_name}/{remote_branch_name}");
-                
-                Trace ($"git checkout {local_branch_name}", verbose);
-                Commands.Checkout (repo, local_branch_name);
-            }
-        }
-
-        /// <summary>
-        /// Reset and clean current working directory. This will ensure that the current
-        /// working directory matches the current Head commit.
-        /// </summary>
-        /// <param name="repo">Repository whose current working directory should be operated on.</param>
-        static void ResetAndCleanWorkingDirectory(IRepository repo)
-        {
-            // Reset the index and the working tree.
-            repo.Reset(ResetMode.Hard);
-
-            // Clean the working directory.
-            repo.RemoveUntrackedFiles();
-        }
-
-        static bool GitCommand (string command_line, string working_dir, bool dry_run)
-            => RunCommand ("git", command_line + (dry_run ? " -n" : String.Empty), working_dir);
-
-        static bool GitPush (string mono_work_dir, string remote_name, string remote_branch_name, string local_branch_name, bool dry_run)
-            => GitCommand ($"push {remote_name} {local_branch_name}:{remote_branch_name}", mono_work_dir, dry_run);
-
-        static bool RunCommand (string command_name, string command_line, string working_dir)
-        {
-            Console.WriteLine ($"$ {command_name} {command_line}");
-            var p = Process.Start (new ProcessStartInfo {
-                            FileName = command_name,
-                            Arguments = command_line,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            WorkingDirectory = working_dir
-                        });
-
-            p.WaitForExit ();
-
-            var stdout_str = p.StandardOutput.ReadToEnd ();
-            var stderr_str = p.StandardError.ReadToEnd ();
-            if (stdout_str.Length > 0)
-                Console.WriteLine (stdout_str);
-            if (stderr_str.Length > 0)
-                Console.WriteLine (stderr_str);
-
-            if (p.ExitCode != 0)
-                Console.WriteLine ($"Error: exitcode: {p.ExitCode}");
-
-            return p.ExitCode == 0;
-        }
         
-        static void Trace (string message, bool verbose)
-        {
-            if (verbose)
-                Console.WriteLine (message);
-        }
+        
+        
 
     }
 }
